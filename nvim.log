@@ -1,0 +1,5 @@
+WRN 2026-05-15T16:31:32.648 ?.50809    server_start:197: Failed to start server: operation not permitted: /var/folders/bk/y281trxn69g4cdyf1sn68pch0000gn/T/nvim.ubonpatrusm/RBJzUa/nvim.50809.0
+WRN 2026-05-20T13:48:54.093 ?.73352    server_start:197: Failed to start server: operation not permitted: /var/folders/bk/y281trxn69g4cdyf1sn68pch0000gn/T/nvim.ubonpatrusm/GEWcQk/nvim.73352.0
+WRN 2026-05-21T10:25:49.237 ?.76332    server_start:197: Failed to start server: operation not permitted: /var/folders/bk/y281trxn69g4cdyf1sn68pch0000gn/T/nvim.ubonpatrusm/FNBbQC/nvim.76332.0
+WRN 2026-05-28T10:44:39.027 ?.39941    server_start:197: Failed to start server: operation not permitted: /var/folders/bk/y281trxn69g4cdyf1sn68pch0000gn/T/nvim.ubonpatrusm/bVMfRt/nvim.39941.0
+WRN 2026-05-28T10:47:17.634 ?.42484    server_start:197: Failed to start server: operation not permitted: /var/folders/bk/y281trxn69g4cdyf1sn68pch0000gn/T/nvim.ubonpatrusm/rvc245/nvim.42484.0
