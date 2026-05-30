@@ -35,6 +35,42 @@ local function lc_gitsigns_call(action, direction)
   fn()
 end
 
+local function lc_first_url(text)
+  return text and text:match("https?://[^%s]+") or nil
+end
+
+local function lc_open_url(url)
+  if not url or url == "" then
+    return false
+  end
+
+  if vim.ui and vim.ui.open then
+    local ok = pcall(vim.ui.open, url)
+    if ok then
+      return true
+    end
+  end
+
+  local command
+  if vim.fn.has("macunix") == 1 then
+    command = { "open", url }
+  elseif vim.fn.has("win32") == 1 then
+    command = { "cmd", "/c", "start", "", url }
+  else
+    command = { "xdg-open", url }
+  end
+
+  vim.system(command, { text = true }, function(result)
+    if result.code ~= 0 then
+      vim.schedule(function()
+        vim.notify("Could not open PR in browser: " .. (result.stderr or "unknown error"), vim.log.levels.WARN)
+      end)
+    end
+  end)
+
+  return true
+end
+
 vim.api.nvim_create_user_command("GitHunkPreview", function()
   lc_gitsigns_call("preview_hunk")
 end, {})
@@ -652,6 +688,12 @@ local function lc_generate_pr_with_base(root, current_branch, base_branch, opena
                 if pr_result.code == 0 then
                   vim.notify("PR created successfully!", vim.log.levels.INFO)
                   vim.notify(pr_result.stdout or "", vim.log.levels.INFO)
+                  local pr_url = lc_first_url(pr_result.stdout or "")
+                  if pr_url then
+                    lc_open_url(pr_url)
+                  else
+                    vim.notify("Created PR, but gh did not return a URL to open.", vim.log.levels.WARN)
+                  end
                 else
                   lc_show_result_failure("GitHub PR Create Failed", pr_result)
                 end
@@ -1425,3 +1467,12 @@ vim.keymap.set("n", "<leader>rp", function()
 
   vim.cmd("!uv run python " .. vim.fn.shellescape(content))
 end)
+
+local function safe_cmd(cmd)
+  return function()
+    pcall(vim.cmd, cmd)
+  end
+end
+
+vim.keymap.set("n", "]q", safe_cmd("cnext"), { desc = "Next quickfix item" })
+vim.keymap.set("n", "[q", safe_cmd("cprevious"), { desc = "Previous quickfix item" })
