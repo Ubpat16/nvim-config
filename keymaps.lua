@@ -1309,6 +1309,31 @@ vim.keymap.set("n", "<leader>To", function()
   require("neotest").output.open({ enter = true, auto_close = false })
 end, { desc = "Neotest output" })
 
+-- Neotest (VSCode-like runner / summary) - Comfortable keymaps
+vim.keymap.set("n", "<leader>mt", function()
+  require("neotest").run.run()
+end, { desc = "Neotest nearest" })
+
+vim.keymap.set("n", "<leader>mf", function()
+  require("neotest").run.run(vim.fn.expand("%"))
+end, { desc = "Neotest this file" })
+
+vim.keymap.set("n", "<leader>ms", function()
+  require("neotest").summary.toggle()
+end, { desc = "Neotest summary" })
+
+vim.keymap.set("n", "<leader>mo", function()
+  require("neotest").output.open({ enter = true, auto_close = false })
+end, { desc = "Neotest output" })
+
+vim.keymap.set("n", "<leader>ml", function()
+  require("neotest").run.run()
+end, { desc = "Neotest last" })
+
+vim.keymap.set("n", "<leader>mc", function()
+  require("neotest").output.close()
+end, { desc = "Neotest close output" })
+
 local function lc_find_pytest_root(start_path)
   return vim.fs.find({ "pyproject.toml", "pytest.ini", ".git" }, { path = start_path, upward = true })[1]
 end

@@ -75,9 +75,9 @@ Run health checks after installation:
 
 ## Python Interpreter Policy
 
-This config deliberately avoids relying on each project's `.venv` for Neovim's own Python integrations.
+This config keeps Neovim's own Python provider stable while letting project tooling use each project's virtual environment.
 
-Neovim tooling resolves one global interpreter in this order:
+Neovim's host interpreter resolves one global interpreter in this order:
 
 1. `NVIM_PYTHON`
 2. `vim.g.python3_host_prog`
@@ -85,15 +85,18 @@ Neovim tooling resolves one global interpreter in this order:
 4. `python3` on `PATH`
 5. `python` on `PATH`
 
-The resolved interpreter is assigned to:
+That resolved interpreter is assigned to:
 
 - Neovim Python provider through `vim.g.python3_host_prog`
+
+Python project tooling resolves the nearest `.venv`, `venv`, or `env` interpreter from the current file or project root, falling back to the global host interpreter only when no project environment exists. The project interpreter is used for:
+
 - Pyright's `pythonPath`
 - `nvim-dap-python`
 - `neotest-python`
-- Git/PR child commands launched by this config, with the global Python directory first on `PATH`
+- Git/PR child commands launched by this config, with the project Python directory first on `PATH`
 
-This keeps Neovim stable when project virtual environments are created, deleted, or changed.
+This keeps Neovim stable while giving Pyright and test/debug integrations the packages and stubs installed in the active project.
 
 To pin a specific interpreter:
 

@@ -58,8 +58,8 @@ return {
         return vim.fn.getcwd()
       end
 
-      local function global_python()
-        return python.global_python() or "python3"
+      local function project_python()
+        return python.project_python(nil, current_file_dir()) or "python3"
       end
 
       local function django_root()
@@ -70,7 +70,7 @@ return {
         return vim.fs.joinpath(django_root(), "manage.py")
       end
 
-      require("dap-python").setup(global_python())
+      require("dap-python").setup(project_python())
       local dap = require("dap")
 
       table.insert(dap.configurations.python, {
@@ -83,7 +83,7 @@ return {
         justMyCode = false,
         console = "integratedTerminal",
         cwd = django_root,
-        pythonPath = global_python,
+        pythonPath = project_python,
       })
 
       table.insert(dap.configurations.python, {
@@ -98,7 +98,7 @@ return {
         justMyCode = false,
         console = "integratedTerminal",
         cwd = django_root,
-        pythonPath = global_python,
+        pythonPath = project_python,
       })
 
       table.insert(dap.configurations.python, {
@@ -110,7 +110,7 @@ return {
         justMyCode = false,
         console = "integratedTerminal",
         cwd = django_root,
-        pythonPath = global_python,
+        pythonPath = project_python,
       })
 
       table.insert(dap.configurations.python, {
@@ -118,7 +118,7 @@ return {
         type = "python",
         request = "attach",
         connect = { host = "127.0.0.1", port = 5678 },
-        pythonPath = global_python,
+        pythonPath = project_python,
       })
     end,
   },
@@ -161,7 +161,7 @@ return {
             dap = { justMyCode = false },
             runner = "pytest",
             python = function()
-              return python.global_python() or "python3"
+              return python.project_python(nil, vim.fn.getcwd()) or "python3"
             end,
           }),
           require("neotest-jest")({}),

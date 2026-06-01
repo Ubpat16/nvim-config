@@ -60,7 +60,7 @@ return {
           local bufnr = event.buf
           if vim.bo[bufnr].filetype == "python" then
             vim.schedule(function()
-              python.apply_global_python(bufnr)
+              python.apply_project_python(bufnr)
             end)
           end
 
@@ -115,7 +115,7 @@ return {
         pattern = { "*.py", "python" },
         callback = function(args)
           vim.schedule(function()
-            python.apply_global_python(args.buf)
+            python.apply_project_python(args.buf)
           end)
         end,
       })
@@ -125,7 +125,7 @@ return {
         callback = function()
           local bufnr = vim.api.nvim_get_current_buf()
           vim.schedule(function()
-            python.apply_global_python(bufnr)
+            python.apply_project_python(bufnr)
           end)
         end,
       })
