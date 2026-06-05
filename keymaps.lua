@@ -506,223 +506,285 @@ local function lc_git_commit_all(bufnr, winid, root)
   end)
 end
 
+local function lc_git_ref_exists(root, ref, callback)
+  vim.system({ "git", "-C", root, "rev-parse", "--verify", "--quiet", ref .. "^{commit}" }, { text = true }, function(result)
+    callback(result.code == 0)
+  end)
+end
+
+local function lc_prepare_pr_compare_ref(root, base_branch, callback)
+  vim.system({ "git", "-C", root, "remote", "get-url", "origin" }, { text = true }, function(remote_result)
+    if remote_result.code ~= 0 then
+      callback(base_branch)
+      return
+    end
+
+    local remote_ref = "origin/" .. base_branch
+    local remote_refspec = "+refs/heads/" .. base_branch .. ":refs/remotes/" .. remote_ref
+
+    vim.system({ "git", "-C", root, "fetch", "--quiet", "origin", remote_refspec }, { text = true }, function(fetch_result)
+      lc_git_ref_exists(root, remote_ref, function(remote_ref_exists)
+        if remote_ref_exists then
+          if fetch_result.code ~= 0 then
+            vim.schedule(function()
+              vim.notify(
+                "Could not refresh origin/" .. base_branch .. "; using the existing remote-tracking ref.",
+                vim.log.levels.WARN
+              )
+            end)
+          end
+          callback(remote_ref)
+          return
+        end
+
+        if fetch_result.code ~= 0 then
+          vim.schedule(function()
+            vim.notify(
+              "Could not refresh origin/" .. base_branch .. "; using local " .. base_branch .. ".",
+              vim.log.levels.WARN
+            )
+          end)
+        end
+        callback(base_branch)
+      end)
+    end)
+  end)
+end
+
 local function lc_generate_pr_with_base(root, current_branch, base_branch, openai)
-  -- Get commit log
-  vim.system({ "git", "-C", root, "log", "--oneline", base_branch .. ".." .. current_branch }, { text = true }, function(log_result)
-    local commits = log_result.code == 0 and vim.trim(log_result.stdout or "") or ""
+  lc_prepare_pr_compare_ref(root, base_branch, function(compare_ref)
+    -- Get commits that are unique to the current branch, excluding patch-equivalent commits already on the base.
+    vim.system({
+      "git",
+      "-C",
+      root,
+      "log",
+      "--oneline",
+      "--cherry-pick",
+      "--right-only",
+      compare_ref .. "..." .. current_branch,
+    }, { text = true }, function(log_result)
+      local commits = log_result.code == 0 and vim.trim(log_result.stdout or "") or ""
 
-    -- Get diff
-    vim.system({ "git", "-C", root, "diff", "--no-ext-diff", "--no-color", base_branch .. ".." .. current_branch }, { text = true }, function(diff_result)
-      local diff = diff_result.code == 0 and vim.trim(diff_result.stdout or "") or ""
+      -- Get the net diff against the base tip so already-merged changes are not included in the draft.
+      vim.system({ "git", "-C", root, "diff", "--no-ext-diff", "--no-color", compare_ref, current_branch }, { text = true }, function(diff_result)
+        local diff = diff_result.code == 0 and vim.trim(diff_result.stdout or "") or ""
 
-      -- Prepare prompt for OpenAI
-      local prompt = table.concat({
-        "Generate a GitHub Pull Request title and description based on these changes.",
-        "",
-        "Rules:",
-        "- Title should be concise and descriptive (max 72 characters)",
-        "- Description should summarize the changes and explain the why, not just the what",
-        "- Format: First line is the title, then blank line, then description",
-        "- Include any important technical details",
-        "- Keep it professional but clear",
-        "",
-        "Commits:",
-        commits ~= "" and commits or "(No commits found)",
-        "",
-        "Diff:",
-        diff ~= "" and diff or "(No diff found)"
-      }, "\n")
+        -- Prepare prompt for OpenAI
+        local prompt = table.concat({
+          "Generate a GitHub Pull Request title and description based on these changes.",
+          "",
+          "Rules:",
+          "- Title should be concise and descriptive (max 72 characters)",
+          "- Description should summarize the changes and explain the why, not just the what",
+          "- Format: First line is the title, then blank line, then description",
+          "- Include any important technical details",
+          "- Keep it professional but clear",
+          "",
+          "Base branch:",
+          base_branch,
+          "",
+          "Compared against:",
+          compare_ref,
+          "",
+          "Commits:",
+          commits ~= "" and commits or "(No commits found)",
+          "",
+          "Diff:",
+          diff ~= "" and diff or "(No diff found)"
+        }, "\n")
 
-      -- Show generating notification
-      vim.notify("Generating PR description with OpenAI...", vim.log.levels.INFO)
+        -- Show generating notification
+        vim.notify("Generating PR description with OpenAI...", vim.log.levels.INFO)
 
-      -- Generate PR description with OpenAI
-      local ok_generate = openai.generate_commit_message(prompt, function(message, err)
-        if err then
-          lc_show_command_failure("OpenAI PR Description Failed", {
-            message = err,
-          })
-          return
-        end
+        -- Generate PR description with OpenAI
+        local ok_generate = openai.generate_commit_message(prompt, function(message, err)
+          if err then
+            lc_show_command_failure("OpenAI PR Description Failed", {
+              message = err,
+            })
+            return
+          end
 
-        -- Parse the response
-        local lines = vim.split(vim.trim(message or ""), "\n", { plain = true })
-        if #lines == 0 then
-          vim.notify("OpenAI returned empty response", vim.log.levels.WARN)
-          return
-        end
+          -- Parse the response
+          local lines = vim.split(vim.trim(message or ""), "\n", { plain = true })
+          if #lines == 0 then
+            vim.notify("OpenAI returned empty response", vim.log.levels.WARN)
+            return
+          end
 
-        local pr_title = vim.trim(lines[1] or "")
-        local pr_body_lines = {}
-        for i = 2, #lines do
-          table.insert(pr_body_lines, lines[i])
-        end
-        while #pr_body_lines > 0 and pr_body_lines[1] == "" do
-          table.remove(pr_body_lines, 1)
-        end
+          local pr_title = vim.trim(lines[1] or "")
+          local pr_body_lines = {}
+          for i = 2, #lines do
+            table.insert(pr_body_lines, lines[i])
+          end
+          while #pr_body_lines > 0 and pr_body_lines[1] == "" do
+            table.remove(pr_body_lines, 1)
+          end
 
-        -- Show preview/edit interface
-        vim.schedule(function()
-          local width = math.min(80, math.max(60, math.floor(vim.o.columns * 0.7)))
-          local height = math.min(25, math.max(15, math.floor(vim.o.lines * 0.7)))
-          local row = math.floor((vim.o.lines - height) / 2)
-          local col = math.floor((vim.o.columns - width) / 2)
-          
-          local bufnr = vim.api.nvim_create_buf(false, true)
-          local preview_name = vim.fn.tempname() .. "-github-pr.md"
-          vim.api.nvim_buf_set_name(bufnr, preview_name)
-          local winid = vim.api.nvim_open_win(bufnr, true, {
-            relative = "editor",
-            width = width,
-            height = height,
-            row = row,
-            col = col,
-            style = "minimal",
-            border = "rounded"
-          })
-          
-          -- Set buffer content with instructions
-          local preview_content = {
-            "===== PR PREVIEW =====",
-            "Review and edit the PR title and description below.",
-            "Press Enter or Ctrl-S to create the PR, or q to cancel.",
-            "",
-            "-------- TITLE --------",
-            pr_title,
-            "",
-            "----- DESCRIPTION ------",
-          }
-          vim.list_extend(preview_content, pr_body_lines)
-          vim.list_extend(preview_content, {
-            "",
-            "Tip: Edit above, then press Enter or Ctrl-S to create the PR",
-          })
-          
-          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, preview_content)
-          
-          -- Add syntax highlighting
-          vim.bo[bufnr].filetype = "markdown"
-          vim.bo[bufnr].modifiable = true
-          vim.bo[bufnr].buftype = "nofile"
-          vim.bo[bufnr].bufhidden = "wipe"
-          vim.bo[bufnr].swapfile = false
-          vim.bo[bufnr].modified = false
+          -- Show preview/edit interface
+          vim.schedule(function()
+            local width = math.min(80, math.max(60, math.floor(vim.o.columns * 0.7)))
+            local height = math.min(25, math.max(15, math.floor(vim.o.lines * 0.7)))
+            local row = math.floor((vim.o.lines - height) / 2)
+            local col = math.floor((vim.o.columns - width) / 2)
 
-          local function submit_pr()
-            if vim.b[bufnr].lc_pr_create_running then
-              vim.notify("PR creation already running", vim.log.levels.INFO)
-              return
-            end
+            local bufnr = vim.api.nvim_create_buf(false, true)
+            local preview_name = vim.fn.tempname() .. "-github-pr.md"
+            vim.api.nvim_buf_set_name(bufnr, preview_name)
+            local winid = vim.api.nvim_open_win(bufnr, true, {
+              relative = "editor",
+              width = width,
+              height = height,
+              row = row,
+              col = col,
+              style = "minimal",
+              border = "rounded"
+            })
 
-            local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-              
-            -- Find title (after "-------- TITLE --------" line)
-            local title_line = nil
-            for i, line in ipairs(all_lines) do
-              if line == "-------- TITLE --------" then
-                title_line = i
-                break
+            -- Set buffer content with instructions
+            local preview_content = {
+              "===== PR PREVIEW =====",
+              "Review and edit the PR title and description below.",
+              "Press Enter or Ctrl-S to create the PR, or q to cancel.",
+              "",
+              "-------- TITLE --------",
+              pr_title,
+              "",
+              "----- DESCRIPTION ------",
+            }
+            vim.list_extend(preview_content, pr_body_lines)
+            vim.list_extend(preview_content, {
+              "",
+              "Tip: Edit above, then press Enter or Ctrl-S to create the PR",
+            })
+
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, preview_content)
+
+            -- Add syntax highlighting
+            vim.bo[bufnr].filetype = "markdown"
+            vim.bo[bufnr].modifiable = true
+            vim.bo[bufnr].buftype = "nofile"
+            vim.bo[bufnr].bufhidden = "wipe"
+            vim.bo[bufnr].swapfile = false
+            vim.bo[bufnr].modified = false
+
+            local function submit_pr()
+              if vim.b[bufnr].lc_pr_create_running then
+                vim.notify("PR creation already running", vim.log.levels.INFO)
+                return
               end
-            end
-              
-            local title = ""
-            local description_lines = {}
-              
-            if title_line then
-              -- Get title (next line after title marker)
-              if all_lines[title_line + 1] then
-                title = vim.trim(all_lines[title_line + 1])
-              end
-                
-              -- Find description start (after "----- DESCRIPTION ------")
-              local desc_start = nil
-              for i = title_line + 2, #all_lines do
-                if all_lines[i] == "----- DESCRIPTION ------" then
-                  desc_start = i
+
+              local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+              -- Find title (after "-------- TITLE --------" line)
+              local title_line = nil
+              for i, line in ipairs(all_lines) do
+                if line == "-------- TITLE --------" then
+                  title_line = i
                   break
                 end
               end
-                
-              if desc_start then
-                -- Collect description lines after the marker (skip "Tip:" line)
-                for i = desc_start + 1, #all_lines do
-                  if not string.match(all_lines[i], "^Tip:") then
-                    table.insert(description_lines, all_lines[i])
+
+              local title = ""
+              local description_lines = {}
+
+              if title_line then
+                -- Get title (next line after title marker)
+                if all_lines[title_line + 1] then
+                  title = vim.trim(all_lines[title_line + 1])
+                end
+
+                -- Find description start (after "----- DESCRIPTION ------")
+                local desc_start = nil
+                for i = title_line + 2, #all_lines do
+                  if all_lines[i] == "----- DESCRIPTION ------" then
+                    desc_start = i
+                    break
+                  end
+                end
+
+                if desc_start then
+                  -- Collect description lines after the marker (skip "Tip:" line)
+                  for i = desc_start + 1, #all_lines do
+                    if not string.match(all_lines[i], "^Tip:") then
+                      table.insert(description_lines, all_lines[i])
+                    end
                   end
                 end
               end
-            end
-              
-            -- Clean up empty lines at end of description
-            while #description_lines > 0 and description_lines[#description_lines] == "" do
-              table.remove(description_lines)
-            end
-              
-            local description = table.concat(description_lines, "\n")
-              
-            if title == "" then
-              vim.notify("PR title cannot be empty", vim.log.levels.ERROR)
-              return
-            end
 
-            vim.b[bufnr].lc_pr_create_running = true
-              
-            -- Close preview window
-            if vim.api.nvim_win_is_valid(winid) then
-              vim.api.nvim_win_close(winid, true)
-            end
-              
-            vim.notify("Creating PR...", vim.log.levels.INFO)
-              
-            -- Create PR using gh CLI
-            local pr_command = {
-              "gh", "pr", "create",
-              "--title", title,
-              "--body", description,
-              "--base", base_branch
-            }
-              
-            vim.system(pr_command, { text = true, env = python_config.global_python_env() }, function(pr_result)
-              pr_result.lc_command = pr_command
-              vim.schedule(function()
-                if pr_result.code == 0 then
-                  vim.notify("PR created successfully!", vim.log.levels.INFO)
-                  vim.notify(pr_result.stdout or "", vim.log.levels.INFO)
-                  local pr_url = lc_first_url(pr_result.stdout or "")
-                  if pr_url then
-                    lc_open_url(pr_url)
+              -- Clean up empty lines at end of description
+              while #description_lines > 0 and description_lines[#description_lines] == "" do
+                table.remove(description_lines)
+              end
+
+              local description = table.concat(description_lines, "\n")
+
+              if title == "" then
+                vim.notify("PR title cannot be empty", vim.log.levels.ERROR)
+                return
+              end
+
+              vim.b[bufnr].lc_pr_create_running = true
+
+              -- Close preview window
+              if vim.api.nvim_win_is_valid(winid) then
+                vim.api.nvim_win_close(winid, true)
+              end
+
+              vim.notify("Creating PR...", vim.log.levels.INFO)
+
+              -- Create PR using gh CLI
+              local pr_command = {
+                "gh", "pr", "create",
+                "--title", title,
+                "--body", description,
+                "--base", base_branch
+              }
+
+              vim.system(pr_command, { text = true, env = python_config.global_python_env() }, function(pr_result)
+                pr_result.lc_command = pr_command
+                vim.schedule(function()
+                  if pr_result.code == 0 then
+                    vim.notify("PR created successfully!", vim.log.levels.INFO)
+                    vim.notify(pr_result.stdout or "", vim.log.levels.INFO)
+                    local pr_url = lc_first_url(pr_result.stdout or "")
+                    if pr_url then
+                      lc_open_url(pr_url)
+                    else
+                      vim.notify("Created PR, but gh did not return a URL to open.", vim.log.levels.WARN)
+                    end
                   else
-                    vim.notify("Created PR, but gh did not return a URL to open.", vim.log.levels.WARN)
+                    lc_show_result_failure("GitHub PR Create Failed", pr_result)
                   end
-                else
-                  lc_show_result_failure("GitHub PR Create Failed", pr_result)
-                end
+                end)
               end)
-            end)
-          end
-
-          local function close_preview()
-            if vim.api.nvim_win_is_valid(winid) then
-              vim.api.nvim_win_close(winid, true)
             end
-            vim.notify("PR creation cancelled", vim.log.levels.INFO)
-          end
 
-          vim.keymap.set("n", "<CR>", submit_pr, { buffer = bufnr, desc = "Create PR" })
-          vim.keymap.set({ "n", "i" }, "<C-s>", function()
-            vim.cmd("stopinsert")
-            submit_pr()
-          end, { buffer = bufnr, desc = "Create PR" })
-          vim.keymap.set("n", "q", close_preview, { buffer = bufnr, desc = "Cancel PR creation" })
-          vim.keymap.set("n", "<Esc>", close_preview, { buffer = bufnr, desc = "Cancel PR creation" })
+            local function close_preview()
+              if vim.api.nvim_win_is_valid(winid) then
+                vim.api.nvim_win_close(winid, true)
+              end
+              vim.notify("PR creation cancelled", vim.log.levels.INFO)
+            end
+
+            vim.keymap.set("n", "<CR>", submit_pr, { buffer = bufnr, desc = "Create PR" })
+            vim.keymap.set({ "n", "i" }, "<C-s>", function()
+              vim.cmd("stopinsert")
+              submit_pr()
+            end, { buffer = bufnr, desc = "Create PR" })
+            vim.keymap.set("n", "q", close_preview, { buffer = bufnr, desc = "Cancel PR creation" })
+            vim.keymap.set("n", "<Esc>", close_preview, { buffer = bufnr, desc = "Cancel PR creation" })
+          end)
         end)
-      end)
 
-      if not ok_generate then
-        lc_show_command_failure("OpenAI PR Description Failed", {
-          message = "Could not start OpenAI PR description generation.",
-        })
-      end
+        if not ok_generate then
+          lc_show_command_failure("OpenAI PR Description Failed", {
+            message = "Could not start OpenAI PR description generation.",
+          })
+        end
+      end)
     end)
   end)
 end
@@ -1333,6 +1395,10 @@ end, { desc = "Neotest last" })
 vim.keymap.set("n", "<leader>mc", function()
   require("neotest").output.close()
 end, { desc = "Neotest close output" })
+
+vim.keymap.set("n", "<leader>ma", function()
+    require("neotest").run.run(vim.fn.getcwd())
+end, { desc = "Neotest suite" })
 
 local function lc_find_pytest_root(start_path)
   return vim.fs.find({ "pyproject.toml", "pytest.ini", ".git" }, { path = start_path, upward = true })[1]

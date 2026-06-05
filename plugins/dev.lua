@@ -309,20 +309,39 @@ process.stdin.on("end", () => {
         end
 
         local function collect_env(ctx, response)
+          local globals = vim.deepcopy(ctx.vars or {})
+          local persisted_globals = vim.g.rest_nvim_javascript_globals or {}
+          for key, value in pairs(persisted_globals) do
+            if globals[key] == nil then
+              globals[key] = value
+            end
+          end
+          for key, value in pairs(vim.env) do
+            if globals[key] == nil then
+              globals[key] = value
+            end
+          end
+
           return {
-            globals = vim.deepcopy(ctx.vars or {}),
+            globals = globals,
             locals = vim.deepcopy(ctx.lv or {}),
             response = response or {},
           }
         end
 
         local function apply_result(ctx, result)
+          local persisted_globals = vim.g.rest_nvim_javascript_globals or {}
           for key, value in pairs(result.locals or {}) do
             ctx:set_local(tostring(key), tostring(value))
           end
           for key, value in pairs(result.globals or {}) do
-            vim.env[tostring(key)] = tostring(value)
+            key = tostring(key)
+            value = tostring(value)
+            persisted_globals[key] = value
+            ctx:set_global(key, value)
+            vim.env[key] = value
           end
+          vim.g.rest_nvim_javascript_globals = persisted_globals
           for _, line in ipairs(result.logs or {}) do
             vim.notify(line, vim.log.levels.INFO, { title = "rest.nvim JavaScript" })
           end
@@ -366,7 +385,7 @@ process.stdin.on("end", () => {
           return decoded
         end
 
-        function script.run(source, ctx, response)
+        local function run_script(source, ctx, response)
           local result = run_node(source, collect_env(ctx, response))
           if not result then
             return response
@@ -375,7 +394,52 @@ process.stdin.on("end", () => {
           return result.response
         end
 
+        function script.load_pre_req_hook(source, ctx)
+          return function()
+            run_script(source, ctx)
+          end
+        end
+
+        function script.load_post_req_hook(source, ctx)
+          return function(response)
+            return run_script(source, ctx, response)
+          end
+        end
+
+        function script.run(source, ctx, response)
+          return run_script(source, ctx, response)
+        end
+
         return script
+      end
+
+      vim.api.nvim_create_user_command("RestJsGlobals", function()
+        vim.print(vim.g.rest_nvim_javascript_globals or {})
+      end, {})
+
+      vim.api.nvim_create_user_command("RestJsTestGlobal", function()
+        local Context = require("rest-nvim.context").Context
+        local script = require("rest-nvim.script.javascript")
+        script.load_post_req_hook([[client.global.set("rest_js_test_token", "ok")]], Context:new())({ body = "{}" })
+        vim.print(vim.g.rest_nvim_javascript_globals or {})
+      end, {})
+
+      do
+        local Context = require("rest-nvim.context").Context
+        if not Context._rest_nvim_javascript_globals_patched then
+          local resolve = Context.resolve
+          function Context:resolve(key)
+            local value = resolve(self, key)
+            if value ~= "" then
+              return value
+            end
+
+            local globals = vim.g.rest_nvim_javascript_globals or {}
+            local persisted = globals[key]
+            return persisted ~= nil and tostring(persisted) or ""
+          end
+          Context._rest_nvim_javascript_globals_patched = true
+        end
       end
 
       require("rest-nvim").setup()
