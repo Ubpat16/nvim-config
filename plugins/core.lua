@@ -45,16 +45,7 @@ return {
         show_close_icon = false,
         left_mouse_command = lc_focus_buffer_window,
         custom_filter = function(bufnr)
-          local current_tab = vim.api.nvim_get_current_tabpage()
-          local wins = vim.api.nvim_tabpage_list_wins(current_tab)
-
-          for _, win in ipairs(wins) do
-            if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == bufnr then
-              return true
-            end
-          end
-
-          return false
+          return vim.bo[bufnr].buflisted and vim.api.nvim_buf_get_name(bufnr) ~= ""
         end,
         offsets = {
           {
