@@ -247,15 +247,28 @@ Copilot insert-mode mappings:
 | `<leader>bc` | Clear all buffers and file registry |
 | `<leader>bn` / `]b` | Next buffer in tab |
 | `<leader>bp` / `[b` | Previous buffer in tab |
+| `<leader>bh` | Move buffer to left split |
+| `<leader>bj` | Move buffer to lower split |
+| `<leader>bk` | Move buffer to upper split |
+| `<leader>bl` | Move buffer to right split |
+| `<leader>bs` | Move buffer to new right split |
 | `<leader>tn` | Next tab |
 | `<leader>tp` | Previous tab |
 | `<leader>to` | New tab |
 | `<leader>tq` | Close tab |
 | `<leader>tm` | Move window to new tab |
+| `<leader>xn` | New workspace |
+| `<leader>xj` | Next workspace |
+| `<leader>xk` | Previous workspace |
+| `<leader>xl` | List workspaces |
+| `<leader>xr` | Rename workspace |
+| `<leader>xq` | Close workspace |
 | `<C-h>` | Move to left window |
 | `<C-l>` | Move to right window |
 | `<C-j>` | Move to lower window |
 | `<C-k>` | Move to upper window |
+
+Runtime workspaces group tabs and buffers inside the current Neovim session. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
 
 ### Editing
 
@@ -354,6 +367,12 @@ For `http` filetype buffers:
 | `:LastProjectFileForget` | Forget a remembered project file |
 | `:LastProjectFiles` | Show remembered files |
 | `:SmartQuit` | Close buffer or quit when appropriate |
+| `:WorkspaceNew [name]` | Create a runtime workspace |
+| `:WorkspaceNext` | Switch to next workspace |
+| `:WorkspacePrevious` | Switch to previous workspace |
+| `:WorkspaceList` | List and switch workspaces |
+| `:WorkspaceRename <name>` | Rename current workspace |
+| `:WorkspaceClose` | Close current workspace |
 
 ## Secrets and Files Not to Commit
 

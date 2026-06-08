@@ -1,12 +1,5 @@
 local function lc_focus_buffer_window(bufnr)
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == bufnr then
-      vim.api.nvim_set_current_win(win)
-      return
-    end
-  end
-
-  vim.cmd("buffer " .. bufnr)
+  require("config.tabs").focus_buffer_window(bufnr)
 end
 
 return {
@@ -45,7 +38,8 @@ return {
         show_close_icon = false,
         left_mouse_command = lc_focus_buffer_window,
         custom_filter = function(bufnr)
-          return vim.bo[bufnr].buflisted and vim.api.nvim_buf_get_name(bufnr) ~= ""
+          local tabs = require("config.tabs")
+          return tabs.is_normal_file_buffer(bufnr) and tabs.is_in_current_tab(bufnr)
         end,
         offsets = {
           {

@@ -990,38 +990,15 @@ local function lc_listed_buffers()
 end
 
 local function lc_current_tab_listed_buffers()
-  local buffers = {}
-
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buflisted then
-      buffers[#buffers + 1] = bufnr
-    end
-  end
-
-  return buffers
+  return require("config.tabs").current_tab_buffers()
 end
 
 local function lc_current_tab_normal_windows()
-  local wins = vim.api.nvim_tabpage_list_wins(0)
-  return vim.tbl_filter(function(win)
-    if not vim.api.nvim_win_is_valid(win) then
-      return false
-    end
-
-    local buf = vim.api.nvim_win_get_buf(win)
-    return vim.bo[buf].buftype == "" and not vim.wo[win].winfixbuf
-  end, wins)
+  return require("config.tabs").current_tab_normal_windows()
 end
 
 local function lc_focus_tab_buffer(bufnr)
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == bufnr then
-      vim.api.nvim_set_current_win(win)
-      return
-    end
-  end
-
-  vim.cmd("buffer " .. bufnr)
+  require("config.tabs").focus_buffer_window(bufnr)
 end
 
 local function lc_tab_buffer_jump(step)
@@ -1040,7 +1017,6 @@ local function lc_tab_buffer_jump(step)
   end
 
   if not index then
-    vim.cmd(step > 0 and "bnext" or "bprevious")
     return
   end
 
@@ -1048,6 +1024,62 @@ local function lc_tab_buffer_jump(step)
   if target and target ~= current then
     lc_focus_tab_buffer(target)
   end
+end
+
+local function lc_move_buffer_to_window(target_win)
+  local tabs = require("config.tabs")
+  local source_win = vim.api.nvim_get_current_win()
+  local source_buf = vim.api.nvim_get_current_buf()
+
+  if source_win == target_win then
+    return false
+  end
+
+  if not tabs.is_normal_window(source_win) or not tabs.is_normal_window(target_win) then
+    vim.notify("Can only move normal file buffers between normal splits", vim.log.levels.WARN)
+    return false
+  end
+
+  local target_buf = vim.api.nvim_win_get_buf(target_win)
+  local fallback = target_buf
+  if fallback == source_buf or not tabs.is_normal_file_buffer(fallback) then
+    fallback = tabs.fallback_buffer({ [source_buf] = true })
+  end
+
+  vim.api.nvim_win_set_buf(source_win, fallback)
+  vim.api.nvim_win_set_buf(target_win, source_buf)
+  vim.api.nvim_set_current_win(target_win)
+  return true
+end
+
+local function lc_move_buffer_direction(direction)
+  local source_win = vim.api.nvim_get_current_win()
+  vim.cmd("wincmd " .. direction)
+  local target_win = vim.api.nvim_get_current_win()
+
+  if target_win == source_win then
+    vim.notify("No split in that direction", vim.log.levels.INFO)
+    return
+  end
+
+  vim.api.nvim_set_current_win(source_win)
+  lc_move_buffer_to_window(target_win)
+end
+
+local function lc_move_buffer_to_new_split()
+  local tabs = require("config.tabs")
+  local source_win = vim.api.nvim_get_current_win()
+  local source_buf = vim.api.nvim_get_current_buf()
+
+  if not tabs.is_normal_window(source_win) then
+    vim.notify("Can only move normal file buffers from normal splits", vim.log.levels.WARN)
+    return
+  end
+
+  local fallback = tabs.fallback_buffer({ [source_buf] = true })
+  vim.api.nvim_win_set_buf(source_win, fallback)
+  vim.cmd("vsplit")
+  vim.api.nvim_win_set_buf(0, source_buf)
 end
 
 local function lc_move_window_to_new_tab()
@@ -1120,6 +1152,8 @@ vim.api.nvim_create_user_command("SmartQuit", lc_smart_quit, {
   desc = "Close current buffer, or quit if it is the last buffer",
 })
 
+require("config.tabs").setup()
+
 vim.keymap.set("c", "<CR>", function()
   if vim.fn.getcmdtype() == ":" then
     local command = vim.fn.getcmdline()
@@ -1168,11 +1202,46 @@ end, { desc = "Next buffer in tab" })
 vim.keymap.set("n", "[b", function()
   lc_tab_buffer_jump(-1)
 end, { desc = "Previous buffer in tab" })
+vim.keymap.set("n", "<leader>bh", function()
+  lc_move_buffer_direction("h")
+end, { desc = "Move buffer to left split" })
+vim.keymap.set("n", "<leader>bj", function()
+  lc_move_buffer_direction("j")
+end, { desc = "Move buffer to lower split" })
+vim.keymap.set("n", "<leader>bk", function()
+  lc_move_buffer_direction("k")
+end, { desc = "Move buffer to upper split" })
+vim.keymap.set("n", "<leader>bl", function()
+  lc_move_buffer_direction("l")
+end, { desc = "Move buffer to right split" })
+vim.keymap.set("n", "<leader>bs", lc_move_buffer_to_new_split, { desc = "Move buffer to new right split" })
 vim.keymap.set("n", "<leader>tn", ":tabnext<CR>", { desc = "Next tab" })
 vim.keymap.set("n", "<leader>tp", ":tabprevious<CR>", { desc = "Previous tab" })
 vim.keymap.set("n", "<leader>to", ":tabnew<CR>", { desc = "New tab" })
 vim.keymap.set("n", "<leader>tq", ":tabclose<CR>", { desc = "Close tab" })
 vim.keymap.set("n", "<leader>tm", lc_move_window_to_new_tab, { desc = "Move window to new tab" })
+vim.keymap.set("n", "<leader>xn", function()
+  require("config.tabs").workspace_new()
+end, { desc = "New workspace" })
+vim.keymap.set("n", "<leader>xj", function()
+  require("config.tabs").workspace_next(1)
+end, { desc = "Next workspace" })
+vim.keymap.set("n", "<leader>xk", function()
+  require("config.tabs").workspace_next(-1)
+end, { desc = "Previous workspace" })
+vim.keymap.set("n", "<leader>xl", function()
+  require("config.tabs").workspace_select()
+end, { desc = "List workspaces" })
+vim.keymap.set("n", "<leader>xr", function()
+  vim.ui.input({ prompt = "Workspace name: " }, function(name)
+    if name and name ~= "" then
+      require("config.tabs").workspace_rename(name)
+    end
+  end)
+end, { desc = "Rename workspace" })
+vim.keymap.set("n", "<leader>xq", function()
+  require("config.tabs").workspace_close()
+end, { desc = "Close workspace" })
 
 vim.keymap.set("n", "<leader>fh", function()
   require("telescope.builtin").help_tags()
