@@ -155,6 +155,11 @@ return {
       "nvim-neotest/neotest-jest",
     },
     config = function()
+      if vim.g.lc_neotest_setup_done then
+        return
+      end
+      vim.g.lc_neotest_setup_done = true
+
       require("neotest").setup({
         adapters = {
           require("neotest-python")({
@@ -165,6 +170,9 @@ return {
             end,
           }),
           require("neotest-jest")({}),
+        },
+        summary = {
+          follow = false,
         },
       })
     end,

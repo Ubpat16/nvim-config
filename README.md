@@ -268,7 +268,7 @@ Copilot insert-mode mappings:
 | `<C-j>` | Move to lower window |
 | `<C-k>` | Move to upper window |
 
-Runtime workspaces group tabs and buffers inside the current Neovim session. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
+Runtime workspaces group tabs and buffers inside the current Neovim session. New workspaces start with a blank single-window layout. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab, while scratch, terminal, plugin UI, unnamed, help, quickfix, and other special buffers stay owned by the workspace tab where they were opened. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
 
 ### Editing
 
