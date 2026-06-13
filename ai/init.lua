@@ -17,8 +17,9 @@ function M.setup_copilot()
     suggestion = {
       enabled = true,
       auto_trigger = true,
-      hide_during_completion = true,
+      hide_during_completion = false,
       debounce = 75,
+      trigger_on_accept = true,
       keymap = {
         accept = false,
         accept_word = false,
@@ -44,7 +45,7 @@ function M.setup_copilot()
       },
     },
     logger = {
-      file = vim.fn.stdpath("log") .. "/copilot-lua.log",
+      file = vim.fs.joinpath(vim.fn.stdpath("state"), "copilot-lua.log"),
       file_log_level = vim.log.levels.INFO,
       print_log_level = vim.log.levels.WARN,
     },

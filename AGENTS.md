@@ -23,9 +23,16 @@ buffer**.
 - the buffer has a non-empty name
 
 Scratch buffers, terminal buffers, plugin UI buffers, unnamed buffers, help
-buffers, quickfix buffers, and other special buffers are workspace-local when
-they are shown in a workspace-owned tab, but they should not be included in
-Bufferline or normal file-buffer navigation.
+buffers, quickfix buffers, floating buffers, fixed-window buffers, and other
+special buffers are workspace-local when they are shown in a workspace-owned
+tab, but they should not be included in Bufferline or normal file-buffer
+navigation.
+
+File preview floats created by `config.tabs.preview_file()` use unlisted
+`nofile` buffers. They may be tracked as workspace-owned special buffers for
+cleanup, but they must not be added to `tab_buffers`, shown in Bufferline, or
+used for duplicate file routing. `config.tabs.select_file_preview()` opens the
+file picker and previews the selected file.
 
 ### Window
 
@@ -64,8 +71,9 @@ A workspace is a runtime-only grouping created by this config. It is not a
 native Neovim concept and it is not persisted across Neovim restarts.
 
 Workspaces group tabs and their tracked buffers inside the current Neovim
-session. New workspaces start as a blank single-window tab with a fresh unnamed
-buffer. The workspace state lives in:
+session. New workspaces must start as a blank single-window tab with a fresh
+unnamed buffer without changing the files, splits, terminals, or plugin panes in
+the workspace being left. The workspace state lives in:
 
 - `workspaces`
 - `workspace_order`
@@ -74,8 +82,11 @@ buffer. The workspace state lives in:
 
 Each workspace stores its name and last active tab. Creating, switching,
 renaming, listing, and closing workspaces is implemented in `config.tabs`.
-Closing a workspace closes its tabs and wipes workspace-owned special buffers
-when they are not modified and are not visible outside the closing tabs.
+Split windows and special plugin panes remain in the workspace where they were
+opened. Floating windows are snapshotted when leaving a tab and restored when
+returning when their buffers are still valid. Closing a workspace closes its tabs
+and wipes workspace-owned special buffers when they are not modified and are not
+visible outside the closing tabs.
 
 ## Ownership Model
 
@@ -92,8 +103,8 @@ Practical implications:
 
 - A workspace owns zero or more tabs.
 - A tab owns a tracked list of normal file buffers for navigation.
-- A tab also owns every valid buffer displayed in its windows for workspace
-  cleanup.
+- A tab also owns every valid buffer displayed in its normal, floating, and
+  special plugin windows for workspace cleanup.
 - A window displays exactly one buffer at a time.
 - A buffer can exist in Neovim without being part of the current tab's tracked
   buffer list.
@@ -144,14 +155,15 @@ Common keymaps:
 
 - `<leader>bn` / `]b`: next buffer in current tab
 - `<leader>bp` / `[b`: previous buffer in current tab
+- `<leader>fp`: pick a file to preview in a floating window
 - `<leader>bh`, `<leader>bj`, `<leader>bk`, `<leader>bl`: move buffer to a
   neighboring split
 - `<leader>bs`: move buffer to a new right split
 - `<leader>tn`, `<leader>tp`, `<leader>to`, `<leader>tq`: tab navigation and
   creation/close
 - `<leader>tm`: move current window to a new tab
-- `<leader>xn`, `<leader>xj`, `<leader>xk`, `<leader>xl`, `<leader>xr`,
-  `<leader>xq`: workspace actions
+- `<leader>zn`, `<leader>zj`, `<leader>zk`, `<leader>zl`, `<leader>zr`,
+  `<leader>zq`: workspace actions
 - `<C-h>`, `<C-j>`, `<C-k>`, `<C-l>`: move between windows
 
 Keep README keymap documentation in sync when adding, removing, or changing

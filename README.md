@@ -146,12 +146,12 @@ This opens a commit-message floating window and asks OpenAI to draft a message f
 
 Inside the commit window:
 
-| Key | Action |
-| --- | --- |
-| `<C-g>` | Regenerate commit message with OpenAI |
+| Key     | Action                                         |
+| ------- | ---------------------------------------------- |
+| `<C-g>` | Regenerate commit message with OpenAI          |
 | `<C-s>` | Run `git add .` and `git commit -F <tempfile>` |
-| `<CR>` | Run `git add .` and `git commit -F <tempfile>` |
-| `q` | Close and cache the draft |
+| `<CR>`  | Run `git add .` and `git commit -F <tempfile>` |
+| `q`     | Close and cache the draft                      |
 
 After a successful commit, the config prompts whether to push the current branch.
 
@@ -183,160 +183,166 @@ Leader is space.
 
 ### Files and Search
 
-| Key | Action |
-| --- | --- |
-| `<leader>e` | Toggle file explorer |
-| `<leader>ff` | Find files |
-| `<leader>fg` | Live grep |
-| `<leader>fb` | Buffers |
-| `<leader>fm` | Marks |
-| `<leader>fh` | Help tags |
-| `<leader>pb` | Browse project files |
+| Key                                 | Action                          |
+| ----------------------------------- | ------------------------------- |
+| `<leader>e`                         | Toggle file explorer            |
+| `<leader>ff`                        | Find files                      |
+| `<leader>fg`                        | Live grep                       |
+| `<leader>fp`                        | Pick file to preview            |
+| `<leader>fb`                        | Buffers                         |
+| `<leader>fm`                        | Marks                           |
+| `<leader>fh`                        | Help tags                       |
+| `<leader>pb`                        | Browse project files            |
+| `s`                                 | Flash jump                      |
+| `S`                                 | Flash Treesitter jump           |
+| `r` in operator-pending mode        | Remote Flash                    |
+| `R` in visual/operator-pending mode | Flash Treesitter search         |
+| `<C-s>` while searching             | Toggle Flash search integration |
 
 ### Git
 
-| Key | Action |
-| --- | --- |
-| `<leader>gs` | Fugitive Git status |
-| `<leader>gb` | Git blame |
-| `<leader>gc` | AI-assisted commit |
-| `<leader>gp` | AI-assisted GitHub PR |
-| `<leader>gl` | Git log graph |
+| Key          | Action                 |
+| ------------ | ---------------------- |
+| `<leader>gs` | Fugitive Git status    |
+| `<leader>gb` | Git blame              |
+| `<leader>gc` | AI-assisted commit     |
+| `<leader>gp` | AI-assisted GitHub PR  |
+| `<leader>gl` | Git log graph          |
 | `<leader>gg` | Git all-branches graph |
-| `<F9>` | Preview Git hunk |
-| `<F10>` | Reset Git hunk |
-| `<F11>` | Reset current file |
-| `<F12>` | Next Git hunk |
-| `<S-F12>` | Previous Git hunk |
+| `<F9>`       | Preview Git hunk       |
+| `<F10>`      | Reset Git hunk         |
+| `<F11>`      | Reset current file     |
+| `<F12>`      | Next Git hunk          |
+| `<S-F12>`    | Previous Git hunk      |
 
 ### AI
 
-| Key | Action |
-| --- | --- |
-| `<leader>aa` | Toggle Codex terminal |
-| `<leader>af` | Focus Codex terminal |
-| `<leader>as` | Send visual selection to Codex |
-| `<leader>ac` | Toggle Copilot Chat |
-| `<leader>ap` | Copilot Chat prompt palette |
-| `<leader>am` | Copilot Chat model picker |
-| `<leader>ae` | Explain visual selection |
-| `<leader>ar` | Review visual selection |
-| `<leader>ai` | Fix visual selection |
-| `<leader>ao` | Optimize visual selection |
+| Key          | Action                              |
+| ------------ | ----------------------------------- |
+| `<leader>aa` | Toggle Codex terminal               |
+| `<leader>af` | Focus Codex terminal                |
+| `<leader>as` | Send visual selection to Codex      |
+| `<leader>ac` | Toggle Copilot Chat                 |
+| `<leader>ap` | Copilot Chat prompt palette         |
+| `<leader>am` | Copilot Chat model picker           |
+| `<leader>ae` | Explain visual selection            |
+| `<leader>ar` | Review visual selection             |
+| `<leader>ai` | Fix visual selection                |
+| `<leader>ao` | Optimize visual selection           |
 | `<leader>at` | Generate tests for visual selection |
-| `<leader>ad` | Fix diagnostic |
-| `<leader>aR` | Reset Copilot Chat |
+| `<leader>ad` | Fix diagnostic                      |
+| `<leader>aR` | Reset Copilot Chat                  |
 
 Copilot insert-mode mappings:
 
-| Key | Action |
-| --- | --- |
-| `<M-Tab>` | Accept suggestion |
-| `<C-y>` | Accept suggestion fallback |
-| `<C-g>w` | Accept word |
-| `<C-g>l` | Accept line |
-| `<C-g>]` | Next suggestion |
-| `<C-g>[` | Previous suggestion |
-| `<C-g>x` | Dismiss suggestion |
+| Key       | Action                     |
+| --------- | -------------------------- |
+| `<M-Tab>` | Accept suggestion          |
+| `<C-y>`   | Accept suggestion fallback |
+| `<C-g>w`  | Accept word                |
+| `<C-g>l`  | Accept line                |
+| `<C-g>]`  | Next suggestion            |
+| `<C-g>[`  | Previous suggestion        |
+| `<C-g>x`  | Dismiss suggestion         |
 
 ### Buffers, Tabs, and Windows
 
-| Key | Action |
-| --- | --- |
-| `<leader>bd` | Smart close buffer |
-| `<leader>bc` | Clear all buffers and file registry |
-| `<leader>bn` / `]b` | Next buffer in tab |
-| `<leader>bp` / `[b` | Previous buffer in tab |
-| `<leader>bh` | Move buffer to left split |
-| `<leader>bj` | Move buffer to lower split |
-| `<leader>bk` | Move buffer to upper split |
-| `<leader>bl` | Move buffer to right split |
-| `<leader>bs` | Move buffer to new right split |
-| `<leader>tn` | Next tab |
-| `<leader>tp` | Previous tab |
-| `<leader>to` | New tab |
-| `<leader>tq` | Close tab |
-| `<leader>tm` | Move window to new tab |
-| `<leader>xn` | New workspace |
-| `<leader>xj` | Next workspace |
-| `<leader>xk` | Previous workspace |
-| `<leader>xl` | List workspaces |
-| `<leader>xr` | Rename workspace |
-| `<leader>xq` | Close workspace |
-| `<C-h>` | Move to left window |
-| `<C-l>` | Move to right window |
-| `<C-j>` | Move to lower window |
-| `<C-k>` | Move to upper window |
+| Key                 | Action                              |
+| ------------------- | ----------------------------------- |
+| `<leader>bd`        | Smart close buffer                  |
+| `<leader>bc`        | Clear all buffers and file registry |
+| `<leader>bn` / `]b` | Next buffer in tab                  |
+| `<leader>bp` / `[b` | Previous buffer in tab              |
+| `<leader>bh`        | Move buffer to left split           |
+| `<leader>bj`        | Move buffer to lower split          |
+| `<leader>bk`        | Move buffer to upper split          |
+| `<leader>bl`        | Move buffer to right split          |
+| `<leader>bs`        | Move buffer to new right split      |
+| `<leader>tn`        | Next tab                            |
+| `<leader>tp`        | Previous tab                        |
+| `<leader>to`        | New tab                             |
+| `<leader>tq`        | Close tab                           |
+| `<leader>tm`        | Move window to new tab              |
+| `<leader>zo`        | New workspace                       |
+| `<leader>zn`        | Next workspace                      |
+| `<leader>zp`        | Previous workspace                  |
+| `<leader>zl`        | List workspaces                     |
+| `<leader>zr`        | Rename workspace                    |
+| `<leader>zq`        | Close workspace                     |
+| `<C-h>`             | Move to left window                 |
+| `<C-l>`             | Move to right window                |
+| `<C-j>`             | Move to lower window                |
+| `<C-k>`             | Move to upper window                |
 
-Runtime workspaces group tabs and buffers inside the current Neovim session. New workspaces start with a blank single-window layout. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab, while scratch, terminal, plugin UI, unnamed, help, quickfix, and other special buffers stay owned by the workspace tab where they were opened. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
+Runtime workspaces group tabs and buffers inside the current Neovim session. New workspaces start with one blank unnamed buffer in one window without changing the files, splits, terminals, or plugin panes in the workspace you left. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab, while scratch, terminal, plugin UI, unnamed, help, quickfix, floating, fixed, and other special buffers/windows stay owned by the workspace tab where they were opened. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
 
 ### Editing
 
-| Key | Action |
-| --- | --- |
-| `<A-j>` | Move line or selection down |
-| `<A-k>` | Move line or selection up |
-| `<Tab>` in visual mode | Indent selection |
-| `<S-Tab>` in visual mode | Outdent selection |
-| `<leader>dl` | Duplicate line down |
-| `<leader>dL` | Duplicate line up |
-| `<leader>ds` | Duplicate visual selection down |
-| `<leader>dS` | Duplicate visual selection up |
-| `<leader>w` | Save |
-| `<leader>qq` | Quit all |
-| `<leader>nh` | Clear search highlight |
+| Key                      | Action                          |
+| ------------------------ | ------------------------------- |
+| `<A-j>`                  | Move line or selection down     |
+| `<A-k>`                  | Move line or selection up       |
+| `<Tab>` in visual mode   | Indent selection                |
+| `<S-Tab>` in visual mode | Outdent selection               |
+| `<leader>dl`             | Duplicate line down             |
+| `<leader>dL`             | Duplicate line up               |
+| `<leader>ds`             | Duplicate visual selection down |
+| `<leader>dS`             | Duplicate visual selection up   |
+| `<leader>w`              | Save                            |
+| `<leader>qq`             | Quit all                        |
+| `<leader>nh`             | Clear search highlight          |
 
 ### Scratch and Clipboard
 
-| Key | Action |
-| --- | --- |
-| `<leader>ns` | New scratch buffer in a tab |
+| Key           | Action                       |
+| ------------- | ---------------------------- |
+| `<leader>ns`  | New scratch buffer in a tab  |
 | `<leader>nhs` | New horizontal scratch split |
-| `<leader>nvs` | New vertical scratch split |
-| `<leader>yp` | Copy absolute file path |
-| `<leader>yr` | Copy relative file path |
+| `<leader>nvs` | New vertical scratch split   |
+| `<leader>yp`  | Copy absolute file path      |
+| `<leader>yr`  | Copy relative file path      |
 
 ### Formatting
 
-| Key or Command | Action |
-| --- | --- |
-| `<leader>cf` | Format current buffer |
-| `:Format` | Format current buffer |
+| Key or Command | Action                          |
+| -------------- | ------------------------------- |
+| `<leader>cf`   | Format current buffer           |
+| `:Format`      | Format current buffer           |
 | `:FormatWrite` | Format and write current buffer |
 
 Python formatting is handled through `uvx ruff` and `uvx black` from `formatters.lua`.
 
 ### Testing and Debugging
 
-| Key | Action |
-| --- | --- |
-| `<F5>` | Neotest nearest |
-| `<F6>` | Neotest current file |
-| `<F7>` | Toggle Neotest summary |
-| `<F8>` | Open Neotest output |
-| `<leader>Tn` | Neotest nearest |
-| `<leader>Tf` | Neotest current file |
-| `<leader>Ts` | Toggle Neotest summary |
-| `<leader>To` | Open Neotest output |
-| `<leader>pt` | Run nearest pytest via `uv` |
+| Key          | Action                           |
+| ------------ | -------------------------------- |
+| `<F5>`       | Neotest nearest                  |
+| `<F6>`       | Neotest current file             |
+| `<F7>`       | Toggle Neotest summary           |
+| `<F8>`       | Open Neotest output              |
+| `<leader>Tn` | Neotest nearest                  |
+| `<leader>Tf` | Neotest current file             |
+| `<leader>Ts` | Toggle Neotest summary           |
+| `<leader>To` | Open Neotest output              |
+| `<leader>pt` | Run nearest pytest via `uv`      |
 | `<leader>pf` | Run current pytest file via `uv` |
-| `<leader>pa` | Run pytest suite via `uv` |
-| `<leader>db` | DAP toggle breakpoint |
-| `<leader>Dc` | DAP continue |
-| `<leader>Di` | DAP step into |
-| `<leader>Do` | DAP step over |
-| `<leader>DO` | DAP step out |
-| `<leader>Du` | Toggle DAP UI |
+| `<leader>pa` | Run pytest suite via `uv`        |
+| `<leader>db` | DAP toggle breakpoint            |
+| `<leader>Dc` | DAP continue                     |
+| `<leader>Di` | DAP step into                    |
+| `<leader>Do` | DAP step over                    |
+| `<leader>DO` | DAP step out                     |
+| `<leader>Du` | Toggle DAP UI                    |
 
 ### Django
 
-| Key | Action |
-| --- | --- |
-| `<leader>dc` | Django system check |
-| `dm` | `manage.py makemigrations` |
-| `dmm` | `manage.py migrate` |
-| `dx` | Prompt for a custom Django command |
-| `df` | Pick and run a Django script |
+| Key          | Action                             |
+| ------------ | ---------------------------------- |
+| `<leader>dc` | Django system check                |
+| `dm`         | `manage.py makemigrations`         |
+| `dmm`        | `manage.py migrate`                |
+| `dx`         | Prompt for a custom Django command |
+| `df`         | Pick and run a Django script       |
 
 Django helpers search upward for `manage.py` and use `.env` files when available.
 
@@ -344,35 +350,37 @@ Django helpers search upward for `manage.py` and use `.env` files when available
 
 For `http` filetype buffers:
 
-| Key | Action |
-| --- | --- |
-| `<leader>rr` | Run request |
+| Key          | Action           |
+| ------------ | ---------------- |
+| `<leader>rr` | Run request      |
 | `<leader>rl` | Run last request |
-| `<leader>ro` | Open result |
-| `<leader>re` | Select env file |
-| `<leader>rc` | Show cookies |
-| `<leader>rg` | Show logs |
+| `<leader>ro` | Open result      |
+| `<leader>re` | Select env file  |
+| `<leader>rc` | Show cookies     |
+| `<leader>rg` | Show logs        |
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `:OpenAISetKey <key>` | Save and validate OpenAI API key |
-| `:GitCommitAll` | Open AI-assisted commit prompt |
-| `:GitCreatePR` | Generate and create GitHub PR |
-| `:Format` | Format current buffer |
-| `:FormatWrite` | Format and save current buffer |
-| `:LastProjectFile` | Show remembered file for current project |
-| `:LastProjectFileOpen` | Open remembered file for current project |
-| `:LastProjectFileForget` | Forget a remembered project file |
-| `:LastProjectFiles` | Show remembered files |
-| `:SmartQuit` | Close buffer or quit when appropriate |
-| `:WorkspaceNew [name]` | Create a runtime workspace |
-| `:WorkspaceNext` | Switch to next workspace |
-| `:WorkspacePrevious` | Switch to previous workspace |
-| `:WorkspaceList` | List and switch workspaces |
-| `:WorkspaceRename <name>` | Rename current workspace |
-| `:WorkspaceClose` | Close current workspace |
+| Command                   | Description                               |
+| ------------------------- | ----------------------------------------- |
+| `:OpenAISetKey <key>`     | Save and validate OpenAI API key          |
+| `:GitCommitAll`           | Open AI-assisted commit prompt            |
+| `:GitCreatePR`            | Generate and create GitHub PR             |
+| `:Format`                 | Format current buffer                     |
+| `:FormatWrite`            | Format and save current buffer            |
+| `:FilePreview [path]`     | Pick or preview file in a floating window |
+| `:FilePreviewClose`       | Close file preview window                 |
+| `:LastProjectFile`        | Show remembered file for current project  |
+| `:LastProjectFileOpen`    | Open remembered file for current project  |
+| `:LastProjectFileForget`  | Forget a remembered project file          |
+| `:LastProjectFiles`       | Show remembered files                     |
+| `:SmartQuit`              | Close buffer or quit when appropriate     |
+| `:WorkspaceNew [name]`    | Create a runtime workspace                |
+| `:WorkspaceNext`          | Switch to next workspace                  |
+| `:WorkspacePrevious`      | Switch to previous workspace              |
+| `:WorkspaceList`          | List and switch workspaces                |
+| `:WorkspaceRename <name>` | Rename current workspace                  |
+| `:WorkspaceClose`         | Close current workspace                   |
 
 ## Secrets and Files Not to Commit
 

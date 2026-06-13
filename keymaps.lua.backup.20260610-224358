@@ -2,7 +2,6 @@
 local django = require("config.django")
 local python_config = require("config.python")
 
--- Git hunk fallback mappings are replaced by Gitsigns when it attaches.
 local function lc_gitsigns_not_attached()
   vim.notify(
     "Gitsigns is not attached to this file. Open a file inside a Git repo, e.g. Backend, Web, or Mobile.",
@@ -16,7 +15,6 @@ vim.keymap.set("n", "<F11>", lc_gitsigns_not_attached, { desc = "Undo entire fil
 vim.keymap.set("n", "<F12>", lc_gitsigns_not_attached, { desc = "Next git hunk" })
 vim.keymap.set("n", "<S-F12>", lc_gitsigns_not_attached, { desc = "Prev git hunk" })
 
--- Git hunk commands.
 local function lc_gitsigns_call(action, direction)
   local ok, gs = pcall(require, "gitsigns")
   if not ok or not vim.b.gitsigns_status_dict then
@@ -89,12 +87,10 @@ vim.api.nvim_create_user_command("GitHunkPrev", function()
   lc_gitsigns_call("nav_hunk", "prev")
 end, {})
 
--- Editing: indentation and moving lines.
-vim.keymap.set("i", "jk", "<Esc>", { desc = "Escape" })
-
 vim.keymap.set("x", "<Tab>", ">gv", { desc = "Indent selection" })
 vim.keymap.set("x", "<S-Tab>", "<gv", { desc = "Outdent selection" })
 
+-- Move lines up/down
 vim.keymap.set("n", "<A-j>", ":m .+1<CR>==", { desc = "Move line down", silent = true })
 vim.keymap.set("n", "<A-k>", ":m .-2<CR>==", { desc = "Move line up", silent = true })
 vim.keymap.set("i", "<A-j>", "<Esc>:m .+1<CR>==gi", { desc = "Move line down", silent = true })
@@ -106,7 +102,7 @@ vim.keymap.set("x", "<A-k>", ":m '<-2<CR>gv=gv", { desc = "Move selection up", s
 
 local lc_commit_message_cache = {}
 
--- AI setup used by Git commit and PR helpers.
+-- Initialize OpenAI module
 local ok_openai_init, openai_err = pcall(function()
   require("config.ai").setup_openai()
 end)
@@ -773,7 +769,6 @@ local function lc_generate_pr_with_base(root, current_branch, base_branch, opena
               vim.notify("PR creation cancelled", vim.log.levels.INFO)
             end
 
-            -- PR preview buffer-local mappings.
             vim.keymap.set("n", "<CR>", submit_pr, { buffer = bufnr, desc = "Create PR" })
             vim.keymap.set({ "n", "i" }, "<C-s>", function()
               vim.cmd("stopinsert")
@@ -893,7 +888,6 @@ local function lc_open_git_commit_float()
         lc_generate_commit_message(bufnr, winid, root)
       end
 
-      -- Commit prompt buffer-local mappings.
       vim.keymap.set({ "n", "i" }, "<C-g>", function()
         vim.cmd("stopinsert")
         lc_generate_commit_message(bufnr, winid, root)
@@ -937,28 +931,7 @@ vim.api.nvim_create_user_command("GitCreatePR", function()
   end)
 end, { desc = "Create GitHub PR with OpenAI-generated description" })
 
--- Files and search.
 vim.keymap.set("n", "<leader>e", ":NvimTreeToggle<CR>", { desc = "Explorer" })
-vim.keymap.set("n", "<leader>ff", function()
-  require("telescope.builtin").find_files()
-end, { desc = "Find files", silent = true })
-vim.keymap.set("n", "<leader>fg", function()
-  require("telescope.builtin").live_grep()
-end, { desc = "Live grep", silent = true })
-vim.keymap.set("n", "<leader>fp", function()
-  require("config.tabs").select_file_preview()
-end, { desc = "Preview file", silent = true })
-vim.keymap.set("n", "<leader>fb", function()
-  require("telescope.builtin").buffers()
-end, { desc = "Buffers", silent = true })
-vim.keymap.set("n", "<leader>fm", function()
-  require("telescope.builtin").marks()
-end, { desc = "Marks", silent = true })
-vim.keymap.set("n", "<leader>fh", function()
-  require("telescope.builtin").help_tags()
-end, { desc = "Help tags", silent = true })
-
--- AI: Codex and Copilot Chat.
 vim.keymap.set("n", "<leader>aa", "<cmd>Codex<CR>", { desc = "AI terminal toggle" })
 vim.keymap.set("n", "<leader>af", "<cmd>CodexFocus<CR>", { desc = "AI terminal focus" })
 vim.keymap.set("v", "<leader>as", "<cmd>CodexSend<CR>", { desc = "AI send selection" })
@@ -975,7 +948,6 @@ vim.keymap.set("v", "<leader>at", "<cmd>CopilotChatTests<CR>", { desc = "AI gene
 vim.keymap.set("n", "<leader>ad", "<cmd>CopilotChatFixDiagnostic<CR>", { desc = "AI fix diagnostic" })
 vim.keymap.set("n", "<leader>aR", "<cmd>CopilotChatReset<CR>", { desc = "AI reset chat" })
 
--- AI: Copilot insert-mode suggestion controls.
 vim.keymap.set("i", "<M-Tab>", function()
   require("copilot.suggestion").accept()
 end, { desc = "Copilot accept" })
@@ -997,6 +969,19 @@ end, { desc = "Copilot previous suggestion" })
 vim.keymap.set("i", "<C-g>x", function()
   require("copilot.suggestion").dismiss()
 end, { desc = "Copilot dismiss suggestion" })
+
+vim.keymap.set("n", "<leader>ff", function()
+  require("telescope.builtin").find_files()
+end, { desc = "Find files", silent = true })
+vim.keymap.set("n", "<leader>fg", function()
+  require("telescope.builtin").live_grep()
+end, { desc = "Live grep", silent = true })
+vim.keymap.set("n", "<leader>fb", function()
+  require("telescope.builtin").buffers()
+end, { desc = "Buffers", silent = true })
+vim.keymap.set("n", "<leader>fm", function()
+  require("telescope.builtin").marks()
+end, { desc = "Marks", silent = true })
 
 local function lc_listed_buffers()
   return vim.tbl_filter(function(bufnr)
@@ -1179,7 +1164,6 @@ vim.keymap.set("c", "<CR>", function()
   return "<CR>"
 end, { expr = true, desc = "Smart quit from command line" })
 
--- Buffers: close, clear, and tab-local navigation.
 vim.keymap.set("n", "<leader>bd", lc_smart_quit, { desc = "Close buffer" })
 vim.keymap.set("n", "<leader>bc", function()
   -- Get all listed buffers and their names BEFORE deleting them
@@ -1218,8 +1202,6 @@ end, { desc = "Next buffer in tab" })
 vim.keymap.set("n", "[b", function()
   lc_tab_buffer_jump(-1)
 end, { desc = "Previous buffer in tab" })
-
--- Windows: move buffers between splits.
 vim.keymap.set("n", "<leader>bh", function()
   lc_move_buffer_direction("h")
 end, { desc = "Move buffer to left split" })
@@ -1233,42 +1215,38 @@ vim.keymap.set("n", "<leader>bl", function()
   lc_move_buffer_direction("l")
 end, { desc = "Move buffer to right split" })
 vim.keymap.set("n", "<leader>bs", lc_move_buffer_to_new_split, { desc = "Move buffer to new right split" })
-
--- Tabs.
 vim.keymap.set("n", "<leader>tn", ":tabnext<CR>", { desc = "Next tab" })
 vim.keymap.set("n", "<leader>tp", ":tabprevious<CR>", { desc = "Previous tab" })
 vim.keymap.set("n", "<leader>to", ":tabnew<CR>", { desc = "New tab" })
 vim.keymap.set("n", "<leader>tq", ":tabclose<CR>", { desc = "Close tab" })
 vim.keymap.set("n", "<leader>tm", lc_move_window_to_new_tab, { desc = "Move window to new tab" })
-
--- Workspaces.
-vim.keymap.set("n", "<leader>zo", function()
+vim.keymap.set("n", "<leader>Wn", function()
   require("config.tabs").workspace_new()
 end, { desc = "New workspace" })
-vim.keymap.set("n", "<leader>zn", function()
+vim.keymap.set("n", "<leader>Wj", function()
   require("config.tabs").workspace_next(1)
 end, { desc = "Next workspace" })
-vim.keymap.set("n", "<leader>zp", function()
+vim.keymap.set("n", "<leader>Wk", function()
   require("config.tabs").workspace_next(-1)
 end, { desc = "Previous workspace" })
-vim.keymap.set("n", "<leader>zl", function()
+vim.keymap.set("n", "<leader>Wl", function()
   require("config.tabs").workspace_select()
 end, { desc = "List workspaces" })
-vim.keymap.set("n", "<leader>zr", function()
+vim.keymap.set("n", "<leader>Wr", function()
   vim.ui.input({ prompt = "Workspace name: " }, function(name)
     if name and name ~= "" then
       require("config.tabs").workspace_rename(name)
     end
   end)
 end, { desc = "Rename workspace" })
-vim.keymap.set("n", "<leader>zq", function()
+vim.keymap.set("n", "<leader>Wq", function()
   require("config.tabs").workspace_close()
 end, { desc = "Close workspace" })
 
--- LSP.
+vim.keymap.set("n", "<leader>fh", function()
+  require("telescope.builtin").help_tags()
+end, { desc = "Help tags", silent = true })
 vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, { desc = "Rename symbol" })
-
--- Git.
 vim.keymap.set("n", "<leader>gs", ":Git<CR>", { desc = "Git status" })
 vim.keymap.set("n", "<leader>gb", ":GBlame<CR>", { desc = "Git blame" })
 vim.keymap.set("n", "<leader>gc", lc_open_git_commit_float, { desc = "Git add all and commit" })
@@ -1292,8 +1270,6 @@ vim.keymap.set("n", "<leader>gp", function()
     end)
   end)
 end, { desc = "Create GitHub PR with OpenAI (preview/edit)" })
-
--- General actions.
 vim.keymap.set("n", "<leader>qq", ":qa<CR>", { desc = "Quit all" })
 vim.keymap.set("n", "<leader>w", ":w<CR>", { desc = "Save" })
 vim.keymap.set("n", "<leader>nh", ":nohlsearch<CR>", { desc = "Clear search highlight" })
@@ -1349,7 +1325,7 @@ end
 
 vim.keymap.set("n", "<leader>ns", lc_create_scratch_buffer, { desc = "New scratch buffer (tab)" })
 
--- Scratch buffers in splits.
+-- Quick scratch buffers in splits
 local function lc_create_horizontal_scratch()
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
@@ -1383,7 +1359,6 @@ end
 vim.keymap.set("n", "<leader>nhs", lc_create_horizontal_scratch, { desc = "New horizontal scratch split" })
 vim.keymap.set("n", "<leader>nvs", lc_create_vertical_scratch, { desc = "New vertical scratch split" })
 
--- Clipboard: copy current file paths.
 vim.keymap.set("n", "<leader>yp", function()
   local path = vim.fn.expand("%:p")
   if path == "" then
@@ -1406,7 +1381,6 @@ vim.keymap.set("n", "<leader>yr", function()
   vim.notify("Copied relative path: " .. path)
 end, { desc = "Copy relative file path" })
 
--- Terminal, undo history, and project browsing.
 vim.keymap.set("n", "<leader>tt", ":ToggleTerm<CR>", { desc = "Terminal" })
 vim.keymap.set("n", "<leader>u", ":UndotreeToggle<CR>", { desc = "Undo history" })
 vim.keymap.set("n", "<leader>pb", function()
@@ -1433,7 +1407,7 @@ vim.keymap.set("n", "<leader>Du", function()
   require("dapui").toggle()
 end, { desc = "DAP UI toggle" })
 
--- Neotest: function-key runner and summary.
+-- Neotest (VSCode-like runner / summary)
 vim.keymap.set("n", "<F5>", function()
   require("neotest").run.run()
 end, { desc = "Pytest nearest" })
@@ -1459,7 +1433,7 @@ vim.keymap.set("n", "<leader>To", function()
   require("neotest").output.open({ enter = true, auto_close = false })
 end, { desc = "Neotest output" })
 
--- Neotest: mnemonic leader mappings.
+-- Neotest (VSCode-like runner / summary) - Comfortable keymaps
 vim.keymap.set("n", "<leader>mt", function()
   require("neotest").run.run()
 end, { desc = "Neotest nearest" })
@@ -1488,7 +1462,6 @@ vim.keymap.set("n", "<leader>ma", function()
     require("neotest").run.run(vim.fn.getcwd())
 end, { desc = "Neotest suite" })
 
--- Pytest via uv.
 local function lc_find_pytest_root(start_path)
   return vim.fs.find({ "pyproject.toml", "pytest.ini", ".git" }, { path = start_path, upward = true })[1]
 end
@@ -1577,7 +1550,7 @@ vim.keymap.set("n", "<leader>pa", function()
   lc_run_pytest("suite")
 end, { desc = "Pytest suite via uv" })
 
--- Django.
+-- Django.nvim
 vim.keymap.set("n", "<leader>dc", function()
   django.run_manage("check")
 end, { desc = "Django system check" })
@@ -1594,13 +1567,11 @@ vim.keymap.set("n", "df", function()
   django.pick_script_and_run()
 end, { desc = "Django run script in shell" })
 
--- Window focus.
 vim.keymap.set("n", "<C-h>", "<C-w><C-h>", { desc = "Move to left window" })
 vim.keymap.set("n", "<C-l>", "<C-w><C-l>", { desc = "Move to right window" })
 vim.keymap.set("n", "<C-j>", "<C-w><C-j>", { desc = "Move to lower window" })
 vim.keymap.set("n", "<C-k>", "<C-w><C-k>", { desc = "Move to upper window" })
 
--- REST file buffers.
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "http",
   group = vim.api.nvim_create_augroup("lc_rest_keymaps", { clear = true }),
@@ -1622,7 +1593,6 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
--- Neotest output buffers.
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "neotest-output", "neotest-attach" },
   group = vim.api.nvim_create_augroup("lc_neotest_output_keymaps", { clear = true }),
@@ -1640,7 +1610,6 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
--- Run current Python file.
 vim.keymap.set("n", "<leader>rp", function()
   local content = vim.fn.expand("%")
 
@@ -1658,6 +1627,5 @@ local function safe_cmd(cmd)
   end
 end
 
--- Quickfix.
 vim.keymap.set("n", "]q", safe_cmd("cnext"), { desc = "Next quickfix item" })
 vim.keymap.set("n", "[q", safe_cmd("cprevious"), { desc = "Previous quickfix item" })

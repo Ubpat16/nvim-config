@@ -1,8 +1,10 @@
 local M = {}
 
 local routing_duplicate = false
+local creating_workspace = false
 local tab_buffers = {}
 local tab_all_buffers = {}
+local tab_floats = {}
 local tab_workspaces = {}
 local buffer_last_tabs = {}
 local workspaces = {}
@@ -10,6 +12,10 @@ local workspace_order = {}
 local active_workspace = nil
 local next_workspace_id = 1
 local next_tab_id = 1
+local file_preview = {
+  bufnr = nil,
+  winid = nil,
+}
 
 local function valid_buf(bufnr)
   return type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr)
@@ -17,6 +23,40 @@ end
 
 local function valid_win(win)
   return type(win) == "number" and vim.api.nvim_win_is_valid(win)
+end
+
+local function is_floating_window(win)
+  if not valid_win(win) then
+    return false
+  end
+
+  local ok, config = pcall(vim.api.nvim_win_get_config, win)
+  return ok and config.relative ~= ""
+end
+
+local function close_win(win)
+  if valid_win(win) then
+    pcall(vim.api.nvim_win_close, win, true)
+  end
+end
+
+local function normalize_path(path)
+  path = vim.trim(tostring(path or ""))
+  if path == "" then
+    return nil
+  end
+
+  path = vim.fn.expand(path)
+  if not path:match("^/") then
+    path = vim.fs.joinpath(vim.fn.getcwd(), path)
+  end
+
+  local real = vim.uv.fs_realpath(path)
+  return vim.fs.normalize(real or vim.fn.fnamemodify(path, ":p"))
+end
+
+local function readable_file(path)
+  return path and vim.fn.filereadable(path) == 1 and vim.fn.isdirectory(path) == 0
 end
 
 function M.is_normal_file_buffer(bufnr)
@@ -171,6 +211,12 @@ local function cleanup_tabs()
     end
   end
 
+  for key in pairs(tab_floats) do
+    if not valid_tab_keys[key] then
+      tab_floats[key] = nil
+    end
+  end
+
   for key in pairs(tab_workspaces) do
     if not valid_tab_keys[key] then
       tab_workspaces[key] = nil
@@ -247,6 +293,69 @@ local function record_tab_windows(tab)
     if valid_win(win) then
       add_buffer_to_tab(vim.api.nvim_win_get_buf(win), tab)
     end
+  end
+end
+
+local function record_display_windows(tab)
+  tab = tab or current_tab()
+  record_tab_windows(tab)
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if valid_win(win) and is_floating_window(win) then
+      local ok, win_tab = pcall(vim.api.nvim_win_get_tabpage, win)
+      if ok and win_tab == tab then
+        add_buffer_to_tab(vim.api.nvim_win_get_buf(win), tab)
+      end
+    end
+  end
+end
+
+local function snapshot_floating_windows(tab)
+  tab = tab or current_tab()
+  local key = tab_key(tab)
+  local snapshots = {}
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if valid_win(win) and is_floating_window(win) then
+      local ok, win_tab = pcall(vim.api.nvim_win_get_tabpage, win)
+      if ok and win_tab == tab then
+        local buf = vim.api.nvim_win_get_buf(win)
+        add_buffer_to_tab(buf, tab)
+        snapshots[#snapshots + 1] = {
+          buf = buf,
+          config = vim.api.nvim_win_get_config(win),
+        }
+        pcall(vim.api.nvim_win_close, win, true)
+      end
+    end
+  end
+
+  if #snapshots > 0 then
+    tab_floats[key] = snapshots
+  end
+end
+
+local function restore_floating_windows(tab)
+  tab = tab or current_tab()
+  local key = tab_key(tab)
+  local snapshots = tab_floats[key]
+  if not snapshots then
+    return
+  end
+
+  tab_floats[key] = nil
+  for _, snapshot in ipairs(snapshots) do
+    if valid_buf(snapshot.buf) and type(snapshot.config) == "table" then
+      pcall(vim.api.nvim_open_win, snapshot.buf, false, snapshot.config)
+    end
+  end
+end
+
+local function reset_current_tab_to_blank(blank)
+  vim.api.nvim_win_set_buf(0, blank)
+  pcall(vim.cmd, "silent! only!")
+  if valid_buf(blank) then
+    vim.api.nvim_win_set_buf(0, blank)
   end
 end
 
@@ -511,8 +620,129 @@ function M.restore_window_to_fallback(win, excluded)
   return true
 end
 
+function M.close_file_preview()
+  close_win(file_preview.winid)
+
+  if valid_buf(file_preview.bufnr) then
+    pcall(vim.cmd, "silent! bwipeout " .. file_preview.bufnr)
+  end
+
+  file_preview.bufnr = nil
+  file_preview.winid = nil
+end
+
+local function prompt_file_preview()
+  vim.ui.input({ prompt = "Preview file: ", completion = "file" }, function(input)
+    if input and input ~= "" then
+      M.preview_file(input)
+    end
+  end)
+end
+
+function M.select_file_preview()
+  local ok_builtin, builtin = pcall(require, "telescope.builtin")
+  local ok_actions, actions = pcall(require, "telescope.actions")
+  local ok_state, action_state = pcall(require, "telescope.actions.state")
+  if not ok_builtin or not ok_actions or not ok_state then
+    prompt_file_preview()
+    return false
+  end
+
+  builtin.find_files({
+    prompt_title = "Preview file",
+    attach_mappings = function(prompt_bufnr)
+      actions.select_default:replace(function()
+        local entry = action_state.get_selected_entry()
+        local path = entry and (entry.path or entry.filename or entry[1])
+        actions.close(prompt_bufnr)
+        if path and path ~= "" then
+          vim.schedule(function()
+            M.preview_file(path)
+          end)
+        end
+      end)
+      return true
+    end,
+  })
+
+  return true
+end
+
+function M.preview_file(path)
+  path = normalize_path(path)
+  if not path then
+    return M.select_file_preview()
+  end
+
+  if vim.fn.isdirectory(path) == 1 then
+    vim.notify("Cannot preview directory: " .. path, vim.log.levels.WARN)
+    return false
+  end
+
+  if not readable_file(path) then
+    vim.notify("Cannot preview unreadable file: " .. path, vim.log.levels.WARN)
+    return false
+  end
+
+  local ok, lines = pcall(vim.fn.readfile, path)
+  if not ok then
+    vim.notify("Could not read preview file: " .. tostring(lines), vim.log.levels.ERROR)
+    return false
+  end
+
+  M.close_file_preview()
+
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  file_preview.bufnr = bufnr
+
+  vim.bo[bufnr].bufhidden = "wipe"
+  vim.bo[bufnr].buflisted = false
+  vim.bo[bufnr].buftype = "nofile"
+  vim.bo[bufnr].modifiable = true
+  vim.bo[bufnr].readonly = false
+  vim.bo[bufnr].swapfile = false
+  pcall(vim.api.nvim_buf_set_name, bufnr, "file-preview://" .. path)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+
+  local filetype = vim.filetype.match({ filename = path })
+  if filetype then
+    vim.bo[bufnr].filetype = filetype
+  end
+  vim.bo[bufnr].modifiable = false
+  vim.bo[bufnr].readonly = true
+
+  local width = math.min(math.max(60, math.floor(vim.o.columns * 0.72)), math.max(20, vim.o.columns - 4))
+  local height = math.min(math.max(14, math.floor(vim.o.lines * 0.58)), math.max(8, vim.o.lines - 4))
+  local winid = vim.api.nvim_open_win(bufnr, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = math.max(0, math.floor((vim.o.lines - height) / 2)),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = " " .. vim.fn.fnamemodify(path, ":~:.") .. " ",
+    title_pos = "center",
+  })
+  file_preview.winid = winid
+
+  vim.wo[winid].cursorline = true
+  vim.wo[winid].number = false
+  vim.wo[winid].relativenumber = false
+  vim.wo[winid].signcolumn = "no"
+  vim.wo[winid].wrap = false
+  vim.wo[winid].winfixbuf = true
+
+  add_buffer_to_tab(bufnr, current_tab())
+
+  vim.keymap.set("n", "q", M.close_file_preview, { buffer = bufnr, desc = "Close file preview" })
+  vim.keymap.set("n", "<Esc>", M.close_file_preview, { buffer = bufnr, desc = "Close file preview" })
+
+  return true
+end
+
 local function route_duplicate_buffer(bufnr, win)
-  if routing_duplicate or not M.is_normal_file_buffer(bufnr) or not M.is_normal_window(win) then
+  if creating_workspace or routing_duplicate or not M.is_normal_file_buffer(bufnr) or not M.is_normal_window(win) then
     return
   end
 
@@ -565,18 +795,56 @@ end
 
 function M.workspace_new(name)
   ensure_workspace()
-  local id = create_workspace(name)
+  local previous_tab = current_tab()
+  record_display_windows(previous_tab)
+  snapshot_floating_windows(previous_tab)
 
-  active_workspace = id
-  vim.cmd("tabnew")
+  local id = create_workspace(name)
+  local ok, err = pcall(function()
+    creating_workspace = true
+    active_workspace = id
+    vim.cmd("tabnew")
+  end)
+  creating_workspace = false
+
+  if not ok then
+    workspaces[id] = nil
+    table.remove(workspace_order, workspace_index(id) or #workspace_order)
+    active_workspace = tab_workspace(previous_tab) or active_workspace
+    restore_floating_windows(previous_tab)
+    vim.notify("Workspace creation failed: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+  end
 
   local tab = current_tab()
+  if tab == previous_tab then
+    workspaces[id] = nil
+    table.remove(workspace_order, workspace_index(id) or #workspace_order)
+    active_workspace = tab_workspace(previous_tab) or active_workspace
+    restore_floating_windows(previous_tab)
+    vim.notify("Workspace creation failed: new tab was not created", vim.log.levels.ERROR)
+    return false
+  end
+
   local key = assign_new_tab_key(tab)
   local blank = vim.api.nvim_create_buf(true, false)
   vim.bo[blank].bufhidden = "hide"
   vim.bo[blank].swapfile = false
 
-  vim.api.nvim_win_set_buf(0, blank)
+  ok, err = pcall(function()
+    creating_workspace = true
+    reset_current_tab_to_blank(blank)
+  end)
+  creating_workspace = false
+  if not ok then
+    workspaces[id] = nil
+    table.remove(workspace_order, workspace_index(id) or #workspace_order)
+    active_workspace = tab_workspace(previous_tab) or active_workspace
+    restore_floating_windows(previous_tab)
+    vim.notify("Workspace creation failed: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+  end
+
   tab_workspaces[key] = id
   tab_buffers[key] = {}
   tab_all_buffers[key] = {}
@@ -586,6 +854,7 @@ function M.workspace_new(name)
   workspaces[id].last_tab_key = key
 
   vim.notify("Workspace: " .. workspaces[id].name, vim.log.levels.INFO)
+  return true
 end
 
 function M.workspace_switch(id)
@@ -594,6 +863,8 @@ function M.workspace_switch(id)
     vim.notify("Workspace not found", vim.log.levels.WARN)
     return false
   end
+
+  snapshot_floating_windows(current_tab())
 
   active_workspace = id
   local workspace = workspaces[id]
@@ -611,6 +882,7 @@ function M.workspace_switch(id)
   workspace.last_tab = target
   workspace.last_tab_key = tab_key(target)
   vim.api.nvim_set_current_tabpage(target)
+  restore_floating_windows(target)
   vim.notify("Workspace: " .. workspace.name, vim.log.levels.INFO)
   return true
 end
@@ -698,7 +970,7 @@ function M.workspace_close()
   local special_buffers = {}
 
   for _, tab in ipairs(closing_tabs) do
-    record_tab_windows(tab)
+    record_display_windows(tab)
     local key = tab_key(tab)
     closing_tab_keys[key] = true
     for _, bufnr in ipairs(tab_all_buffers[key] or {}) do
@@ -734,7 +1006,14 @@ end
 
 function M.setup()
   ensure_workspace()
-  record_tab_windows(current_tab())
+  record_display_windows(current_tab())
+
+  vim.api.nvim_create_autocmd("TabLeave", {
+    group = vim.api.nvim_create_augroup("lc_workspace_display_cleanup", { clear = true }),
+    callback = function()
+      snapshot_floating_windows(current_tab())
+    end,
+  })
 
   vim.api.nvim_create_autocmd("BufLeave", {
     group = vim.api.nvim_create_augroup("lc_tab_buffer_capture", { clear = true }),
@@ -760,7 +1039,8 @@ function M.setup()
       end
       workspaces[active_workspace].last_tab = tab
       workspaces[active_workspace].last_tab_key = key
-      record_tab_windows(tab)
+      record_display_windows(tab)
+      restore_floating_windows(tab)
     end,
   })
 
@@ -821,6 +1101,14 @@ function M.setup()
   vim.api.nvim_create_user_command("WorkspaceClose", function()
     M.workspace_close()
   end, { desc = "Close current runtime workspace" })
+
+  vim.api.nvim_create_user_command("FilePreview", function(opts)
+    M.preview_file(opts.args)
+  end, { nargs = "?", complete = "file", desc = "Preview a file in a floating window" })
+
+  vim.api.nvim_create_user_command("FilePreviewClose", function()
+    M.close_file_preview()
+  end, { desc = "Close the file preview floating window" })
 end
 
 return M
