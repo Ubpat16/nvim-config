@@ -1459,6 +1459,18 @@ end, { desc = "DAP step out" })
 vim.keymap.set("n", "<leader>Du", function()
   require("dapui").toggle()
 end, { desc = "DAP UI toggle" })
+vim.keymap.set("n", "<leader>dn", function()
+  require("dap").step_over()
+end, { desc = "DAP next line" })
+vim.keymap.set("n", "<leader>di", function()
+  require("dap").step_into()
+end, { desc = "DAP step into" })
+vim.keymap.set("n", "<leader>do", function()
+  require("dap").step_out()
+end, { desc = "DAP step out" })
+vim.keymap.set("n", "<leader>du", function()
+  require("dapui").toggle()
+end, { desc = "DAP UI toggle" })
 
 -- Neotest: function-key runner and summary.
 vim.keymap.set("n", "<F5>", function()
@@ -1487,12 +1499,66 @@ vim.keymap.set("n", "<leader>To", function()
 end, { desc = "Neotest output" })
 
 -- Neotest: mnemonic leader mappings.
+local function lc_save_current_buffer_if_file()
+  if vim.bo.buftype ~= "" then
+    return
+  end
+  if not vim.bo.modifiable or vim.bo.readonly then
+    return
+  end
+  if vim.api.nvim_buf_get_name(0) == "" then
+    return
+  end
+
+  vim.cmd("silent update")
+end
+
+local function lc_neotest_run(args)
+  lc_save_current_buffer_if_file()
+  require("neotest").run.run(args)
+end
+
+local function lc_neotest_current_file_args(extra_args)
+  local file = vim.fn.expand("%")
+  if file == "" then
+    vim.notify("Save this test file before running neotest", vim.log.levels.WARN)
+    return nil
+  end
+
+  local args = { file }
+  if extra_args then
+    args.extra_args = extra_args
+  end
+  return args
+end
+
+local function lc_neotest_nearest_with_args(extra_args)
+  lc_neotest_run({ extra_args = extra_args })
+end
+
+local function lc_neotest_file_with_args(extra_args)
+  local args = lc_neotest_current_file_args(extra_args)
+  if args then
+    lc_neotest_run(args)
+  end
+end
+
+local function lc_prompt_neotest_pytest_args(run_with_args)
+  vim.ui.input({ prompt = "pytest args: " }, function(input)
+    if not input or vim.trim(input) == "" then
+      return
+    end
+
+    run_with_args(vim.split(vim.trim(input), "%s+", { trimempty = true }))
+  end)
+end
+
 vim.keymap.set("n", "<leader>mt", function()
-  require("neotest").run.run()
+  lc_neotest_run()
 end, { desc = "Neotest nearest" })
 
 vim.keymap.set("n", "<leader>mf", function()
-  require("neotest").run.run(vim.fn.expand("%"))
+  lc_neotest_file_with_args()
 end, { desc = "Neotest this file" })
 
 vim.keymap.set("n", "<leader>ms", function()
@@ -1504,7 +1570,8 @@ vim.keymap.set("n", "<leader>mo", function()
 end, { desc = "Neotest output" })
 
 vim.keymap.set("n", "<leader>ml", function()
-  require("neotest").run.run()
+  lc_save_current_buffer_if_file()
+  require("neotest").run.run_last()
 end, { desc = "Neotest last" })
 
 vim.keymap.set("n", "<leader>mc", function()
@@ -1512,8 +1579,60 @@ vim.keymap.set("n", "<leader>mc", function()
 end, { desc = "Neotest close output" })
 
 vim.keymap.set("n", "<leader>ma", function()
-    require("neotest").run.run(vim.fn.getcwd())
+  lc_neotest_run({ vim.fn.getcwd(), suite = true })
 end, { desc = "Neotest suite" })
+
+vim.keymap.set("n", "<leader>md", function()
+  lc_neotest_run({ strategy = "dap" })
+end, { desc = "Neotest debug nearest" })
+
+vim.keymap.set("n", "<leader>mD", function()
+  local args = lc_neotest_current_file_args()
+  if args then
+    args.strategy = "dap"
+    lc_neotest_run(args)
+  end
+end, { desc = "Neotest debug file" })
+
+vim.keymap.set("n", "<leader>mp", function()
+  lc_neotest_nearest_with_args({ "--pdb" })
+end, { desc = "Neotest nearest with pdb" })
+
+vim.keymap.set("n", "<leader>mP", function()
+  lc_neotest_file_with_args({ "--pdb" })
+end, { desc = "Neotest file with pdb" })
+
+vim.keymap.set("n", "<leader>mx", function()
+  lc_prompt_neotest_pytest_args(lc_neotest_nearest_with_args)
+end, { desc = "Neotest nearest with pytest args" })
+
+vim.keymap.set("n", "<leader>mX", function()
+  lc_prompt_neotest_pytest_args(lc_neotest_file_with_args)
+end, { desc = "Neotest file with pytest args" })
+
+vim.keymap.set("n", "<leader>mO", function()
+  require("neotest").output_panel.toggle()
+end, { desc = "Neotest output panel" })
+
+vim.keymap.set("n", "<leader>mw", function()
+  require("neotest").watch.toggle()
+end, { desc = "Neotest watch nearest" })
+
+vim.keymap.set("n", "<leader>mq", function()
+  require("neotest").run.stop({ interactive = true })
+end, { desc = "Neotest stop" })
+
+vim.keymap.set("n", "<leader>mi", function()
+  require("neotest").run.attach({ interactive = true })
+end, { desc = "Neotest attach" })
+
+vim.keymap.set("n", "]m", function()
+  require("neotest").jump.next({ status = "failed" })
+end, { desc = "Next failed test" })
+
+vim.keymap.set("n", "[m", function()
+  require("neotest").jump.prev({ status = "failed" })
+end, { desc = "Previous failed test" })
 
 -- Pytest via uv.
 local function lc_find_pytest_root(start_path)

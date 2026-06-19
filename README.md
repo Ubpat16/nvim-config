@@ -342,10 +342,32 @@ Python formatting is handled through `uvx ruff` and `uvx black` from `formatters
 | `<leader>Tf` | Neotest current file             |
 | `<leader>Ts` | Toggle Neotest summary           |
 | `<leader>To` | Open Neotest output              |
+| `<leader>mt` | Neotest nearest                  |
+| `<leader>mf` | Neotest current file             |
+| `<leader>ma` | Neotest suite                    |
+| `<leader>ml` | Neotest last run                 |
+| `<leader>md` | Debug nearest test               |
+| `<leader>mD` | Debug current test file          |
+| `<leader>mp` | Neotest nearest with `--pdb`     |
+| `<leader>mP` | Neotest current file with `--pdb` |
+| `<leader>mx` | Prompt for nearest pytest args   |
+| `<leader>mX` | Prompt for current-file pytest args |
+| `<leader>ms` | Toggle Neotest summary           |
+| `<leader>mo` | Open Neotest output              |
+| `<leader>mO` | Toggle Neotest output panel      |
+| `<leader>mw` | Toggle Neotest watch             |
+| `<leader>mq` | Stop a running Neotest process   |
+| `<leader>mi` | Attach to a running Neotest process |
+| `]m`         | Next failed test                 |
+| `[m`         | Previous failed test             |
 | `<leader>pt` | Run nearest pytest via `uv`      |
 | `<leader>pf` | Run current pytest file via `uv` |
 | `<leader>pa` | Run pytest suite via `uv`        |
 | `<leader>db` | DAP toggle breakpoint            |
+| `<leader>dn` | DAP next line                    |
+| `<leader>di` | DAP step into                    |
+| `<leader>do` | DAP step out                     |
+| `<leader>du` | Toggle DAP UI                    |
 | `<leader>Dc` | DAP continue                     |
 | `<leader>Di` | DAP step into                    |
 | `<leader>Do` | DAP step over                    |
