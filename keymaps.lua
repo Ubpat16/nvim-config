@@ -1,5 +1,6 @@
 -- Keymaps
 local django = require("config.django")
+local logs = require("config.logs")
 local python_config = require("config.python")
 
 -- Git hunk fallback mappings are replaced by Gitsigns when it attaches.
@@ -113,6 +114,7 @@ end)
 if not ok_openai_init then
   vim.notify("Failed to initialize OpenAI: " .. tostring(openai_err), vim.log.levels.WARN)
 end
+logs.create_commands()
 
 local function lc_git_commit_message(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -967,6 +969,7 @@ vim.keymap.set("n", "<leader>ap", "<cmd>CopilotChatPrompts<CR>", { desc = "AI pr
 vim.keymap.set("n", "<leader>am", function()
   require("CopilotChat").select_model()
 end, { desc = "AI model picker" })
+vim.keymap.set("n", "<leader>al", "<cmd>AILogs<CR>", { desc = "AI logs" })
 vim.keymap.set("v", "<leader>ae", "<cmd>CopilotChatExplain<CR>", { desc = "AI explain selection" })
 vim.keymap.set("v", "<leader>ar", "<cmd>CopilotChatReview<CR>", { desc = "AI review selection" })
 vim.keymap.set("v", "<leader>ai", "<cmd>CopilotChatFix<CR>", { desc = "AI fix selection" })
@@ -1081,10 +1084,23 @@ local function lc_move_buffer_direction(direction)
   lc_move_buffer_to_window(target_win)
 end
 
-local function lc_move_buffer_to_new_split()
+local buffer_split_commands = {
+  h = "leftabove vsplit",
+  j = "rightbelow split",
+  k = "leftabove split",
+  l = "rightbelow vsplit",
+}
+
+local function lc_move_buffer_to_new_split(direction)
   local tabs = require("config.tabs")
   local source_win = vim.api.nvim_get_current_win()
   local source_buf = vim.api.nvim_get_current_buf()
+  local split_command = buffer_split_commands[direction]
+
+  if not split_command then
+    vim.notify("Unknown split direction", vim.log.levels.WARN)
+    return
+  end
 
   if not tabs.is_normal_window(source_win) then
     vim.notify("Can only move normal file buffers from normal splits", vim.log.levels.WARN)
@@ -1093,7 +1109,7 @@ local function lc_move_buffer_to_new_split()
 
   local fallback = tabs.fallback_buffer({ [source_buf] = true })
   vim.api.nvim_win_set_buf(source_win, fallback)
-  vim.cmd("vsplit")
+  vim.cmd(split_command)
   vim.api.nvim_win_set_buf(0, source_buf)
 end
 
@@ -1232,7 +1248,18 @@ end, { desc = "Move buffer to upper split" })
 vim.keymap.set("n", "<leader>bl", function()
   lc_move_buffer_direction("l")
 end, { desc = "Move buffer to right split" })
-vim.keymap.set("n", "<leader>bs", lc_move_buffer_to_new_split, { desc = "Move buffer to new right split" })
+vim.keymap.set("n", "<leader>bsh", function()
+  lc_move_buffer_to_new_split("h")
+end, { desc = "Move buffer to new left split" })
+vim.keymap.set("n", "<leader>bsj", function()
+  lc_move_buffer_to_new_split("j")
+end, { desc = "Move buffer to new lower split" })
+vim.keymap.set("n", "<leader>bsk", function()
+  lc_move_buffer_to_new_split("k")
+end, { desc = "Move buffer to new upper split" })
+vim.keymap.set("n", "<leader>bsl", function()
+  lc_move_buffer_to_new_split("l")
+end, { desc = "Move buffer to new right split" })
 
 -- Tabs.
 vim.keymap.set("n", "<leader>tn", ":tabnext<CR>", { desc = "Next tab" })

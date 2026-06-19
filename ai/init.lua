@@ -1,4 +1,5 @@
 local M = {}
+local logs = require("config.logs")
 
 local function codex_notify_path()
   local path = vim.fs.joinpath(vim.fn.stdpath("state"), "codex", "notify.jsonl")
@@ -45,7 +46,7 @@ function M.setup_copilot()
       },
     },
     logger = {
-      file = vim.fs.joinpath(vim.fn.stdpath("state"), "copilot-lua.log"),
+      file = logs.path("copilot"),
       file_log_level = vim.log.levels.INFO,
       print_log_level = vim.log.levels.WARN,
     },

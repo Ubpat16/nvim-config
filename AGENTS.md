@@ -142,6 +142,11 @@ change explicitly alters the workspace model.
 
 ## User-Facing Commands and Keys
 
+Log commands:
+
+- `:AILogs`
+- `:PluginLogs [source]`
+
 Workspace commands:
 
 - `:WorkspaceNew [name]`
@@ -158,7 +163,8 @@ Common keymaps:
 - `<leader>fp`: pick a file to preview in a floating window
 - `<leader>bh`, `<leader>bj`, `<leader>bk`, `<leader>bl`: move buffer to a
   neighboring split
-- `<leader>bs`: move buffer to a new right split
+- `<leader>bsh`, `<leader>bsj`, `<leader>bsk`, `<leader>bsl`: move buffer to a
+  new split in that direction
 - `<leader>tn`, `<leader>tp`, `<leader>to`, `<leader>tq`: tab navigation and
   creation/close
 - `<leader>tm`: move current window to a new tab

@@ -132,6 +132,20 @@ Copilot and Copilot Chat are configured in `lua/config/ai/init.lua` and loaded f
 
 Codex is configured with IDE integration enabled and opens in a right-side terminal split.
 
+### Plugin Logs
+
+Use `:AILogs` or `<leader>al` to tail AI logs in a terminal split. This follows:
+
+```text
+~/.local/state/nvim/openai.log
+~/.local/state/nvim/copilot-lua.log
+~/.local/state/nvim/codex/notify.jsonl
+```
+
+Use `:PluginLogs [source]` to tail plugin logs. Supported sources are `all`, `ai`, `nvim`, `openai`, `copilot`, and `codex`.
+
+OpenAI request logs include request metadata, response sizes, and errors. They do not include prompts, diffs, responses, or API keys.
+
 ## Git Workflow
 
 ### Commit Helper
@@ -225,6 +239,7 @@ Leader is space.
 | `<leader>ac` | Toggle Copilot Chat                 |
 | `<leader>ap` | Copilot Chat prompt palette         |
 | `<leader>am` | Copilot Chat model picker           |
+| `<leader>al` | Tail AI logs                        |
 | `<leader>ae` | Explain visual selection            |
 | `<leader>ar` | Review visual selection             |
 | `<leader>ai` | Fix visual selection                |
@@ -257,7 +272,10 @@ Copilot insert-mode mappings:
 | `<leader>bj`        | Move buffer to lower split          |
 | `<leader>bk`        | Move buffer to upper split          |
 | `<leader>bl`        | Move buffer to right split          |
-| `<leader>bs`        | Move buffer to new right split      |
+| `<leader>bsh`       | Move buffer to new left split       |
+| `<leader>bsj`       | Move buffer to new lower split      |
+| `<leader>bsk`       | Move buffer to new upper split      |
+| `<leader>bsl`       | Move buffer to new right split      |
 | `<leader>tn`        | Next tab                            |
 | `<leader>tp`        | Previous tab                        |
 | `<leader>to`        | New tab                             |
@@ -389,6 +407,9 @@ Do not commit machine-local or secret files:
 ```text
 openai_config.json
 nvim.log
+openai.log
+copilot-lua.log
+codex/notify.jsonl
 .DS_Store
 .stfolder/
 ```
@@ -398,6 +419,9 @@ Recommended `.gitignore` entries:
 ```gitignore
 openai_config.json
 nvim.log
+openai.log
+copilot-lua.log
+codex/notify.jsonl
 .DS_Store
 .stfolder/
 ```

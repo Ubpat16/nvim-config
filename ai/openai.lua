@@ -1,4 +1,5 @@
 local M = {}
+local logs = require("config.logs")
 
 local config = {
   api_key = nil,
@@ -118,25 +119,48 @@ function M.generate_commit_message(prompt, callback)
     body,
   }
 
+  logs.write("openai", "info", "chat_completion_started", {
+    model = config.model,
+    base_url = config.base_url,
+    prompt_chars = #prompt,
+    max_tokens = config.max_tokens,
+    temperature = config.temperature,
+  })
+
   vim.system(command, { text = true }, function(result)
     vim.schedule(function()
       if result.code ~= 0 then
+        logs.write("openai", "error", "chat_completion_failed", {
+          code = result.code,
+          stderr = vim.trim(result.stderr or ""),
+        })
         callback(nil, "OpenAI API request failed: " .. (result.stderr or "unknown error"))
         return
       end
 
       local ok, data = pcall(vim.json.decode, result.stdout)
       if not ok then
+        logs.write("openai", "error", "chat_completion_parse_failed", {
+          response_chars = #(result.stdout or ""),
+        })
         callback(nil, "Failed to parse OpenAI response: " .. vim.trim(result.stdout or ""))
         return
       end
 
       if data.error then
+        logs.write("openai", "error", "chat_completion_api_error", {
+          message = data.error.message or "unknown error",
+          type = data.error.type,
+          code = data.error.code,
+        })
         callback(nil, "OpenAI API error: " .. (data.error.message or "unknown error"))
         return
       end
 
       local message = data.choices[1].message.content
+      logs.write("openai", "info", "chat_completion_succeeded", {
+        response_chars = #(message or ""),
+      })
       callback(message)
     end)
   end)
