@@ -1131,6 +1131,21 @@ local function lc_move_window_to_new_tab()
   end
 end
 
+local function lc_new_tab()
+  vim.cmd("tab split")
+  local target_tab = vim.api.nvim_get_current_tabpage()
+
+  local blank = vim.api.nvim_create_buf(true, false)
+  vim.bo[blank].bufhidden = "hide"
+  vim.bo[blank].swapfile = false
+  vim.api.nvim_win_set_buf(0, blank)
+  pcall(vim.cmd, "silent! only")
+
+  if vim.api.nvim_tabpage_is_valid(target_tab) then
+    vim.api.nvim_set_current_tabpage(target_tab)
+  end
+end
+
 local function lc_smart_quit()
   local current_win = vim.api.nvim_get_current_win()
   local current = vim.api.nvim_get_current_buf()
@@ -1264,7 +1279,7 @@ end, { desc = "Move buffer to new right split" })
 -- Tabs.
 vim.keymap.set("n", "<leader>tn", ":tabnext<CR>", { desc = "Next tab" })
 vim.keymap.set("n", "<leader>tp", ":tabprevious<CR>", { desc = "Previous tab" })
-vim.keymap.set("n", "<leader>to", ":tabnew<CR>", { desc = "New tab" })
+vim.keymap.set("n", "<leader>to", lc_new_tab, { desc = "New tab" })
 vim.keymap.set("n", "<leader>tq", ":tabclose<CR>", { desc = "Close tab" })
 vim.keymap.set("n", "<leader>tm", lc_move_window_to_new_tab, { desc = "Move window to new tab" })
 
@@ -1747,26 +1762,38 @@ vim.keymap.set("n", "<C-j>", "<C-w><C-j>", { desc = "Move to lower window" })
 vim.keymap.set("n", "<C-k>", "<C-w><C-k>", { desc = "Move to upper window" })
 
 -- REST file buffers.
+local function lc_attach_rest_keymaps(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) or vim.bo[bufnr].filetype ~= "http" then
+    return
+  end
+
+  local map = function(lhs, rhs, desc)
+    vim.keymap.set("n", lhs, rhs, {
+      buffer = bufnr,
+      desc = desc,
+      silent = true,
+    })
+  end
+
+  map("<leader>rr", "<cmd>Rest run<CR>", "REST run request")
+  map("<leader>rl", "<cmd>Rest last<CR>", "REST run last request")
+  map("<leader>ro", "<cmd>Rest open<CR>", "REST open result")
+  map("<leader>re", "<cmd>Rest env select<CR>", "REST select env file")
+  map("<leader>rc", "<cmd>Rest cookies<CR>", "REST cookies")
+  map("<leader>rg", "<cmd>Rest logs<CR>", "REST logs")
+end
+
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "http",
   group = vim.api.nvim_create_augroup("lc_rest_keymaps", { clear = true }),
   callback = function(event)
-    local map = function(lhs, rhs, desc)
-      vim.keymap.set("n", lhs, rhs, {
-        buffer = event.buf,
-        desc = desc,
-        silent = true,
-      })
-    end
-
-    map("<leader>rr", "<cmd>Rest run<CR>", "REST run request")
-    map("<leader>rl", "<cmd>Rest last<CR>", "REST run last request")
-    map("<leader>ro", "<cmd>Rest open<CR>", "REST open result")
-    map("<leader>re", "<cmd>Rest env select<CR>", "REST select env file")
-    map("<leader>rc", "<cmd>Rest cookies<CR>", "REST cookies")
-    map("<leader>rg", "<cmd>Rest logs<CR>", "REST logs")
+    lc_attach_rest_keymaps(event.buf)
   end,
 })
+
+for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+  lc_attach_rest_keymaps(bufnr)
+end
 
 -- Neotest output buffers.
 vim.api.nvim_create_autocmd("FileType", {

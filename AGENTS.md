@@ -51,8 +51,10 @@ not rename, duplicate, or delete buffers.
 ### Tab
 
 A tab is a Neovim tabpage: a layout container for one or more windows. This repo
-tracks which normal file buffers belong to each tab in `tab_buffers`, and tracks
-all displayed buffers for workspace ownership and special-buffer cleanup.
+persists tab identity, order, layout, and tracked normal file buffers across
+Neovim restarts in `tabs.lua`, while still tracking displayed buffers for
+workspace ownership and special-buffer cleanup. Tabs are presented in the
+tabline, while the workspace name is presented in the statusline.
 
 Important details:
 
@@ -68,7 +70,8 @@ Important details:
 ### Workspace
 
 A workspace is a runtime-only grouping created by this config. It is not a
-native Neovim concept and it is not persisted across Neovim restarts.
+native Neovim concept and it is not persisted across Neovim restarts. Tabs are
+the persisted unit; workspaces are recreated fresh on launch.
 
 Workspaces group tabs and their tracked buffers inside the current Neovim
 session. New workspaces must start as a blank single-window tab with a fresh

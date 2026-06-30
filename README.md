@@ -278,7 +278,7 @@ Copilot insert-mode mappings:
 | `<leader>bsl`       | Move buffer to new right split      |
 | `<leader>tn`        | Next tab                            |
 | `<leader>tp`        | Previous tab                        |
-| `<leader>to`        | New tab                             |
+| `<leader>to`        | New tab from current window         |
 | `<leader>tq`        | Close tab                           |
 | `<leader>tm`        | Move window to new tab              |
 | `<leader>zo`        | New workspace                       |
@@ -292,7 +292,9 @@ Copilot insert-mode mappings:
 | `<C-j>`             | Move to lower window                |
 | `<C-k>`             | Move to upper window                |
 
-Runtime workspaces group tabs and buffers inside the current Neovim session. New workspaces start with one blank unnamed buffer in one window without changing the files, splits, terminals, or plugin panes in the workspace you left. Bufferline and buffer navigation are scoped to normal file buffers opened in the current workspace tab, while scratch, terminal, plugin UI, unnamed, help, quickfix, floating, fixed, and other special buffers/windows stay owned by the workspace tab where they were opened. Opening a file that belongs to another workspace or tab switches to that existing workspace/tab/window.
+Tabs are persisted across Neovim restarts. A new tab starts with one blank unnamed buffer in one window, and tab-local buffer navigation stays scoped to normal file buffers in the current tab. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Workspaces remain runtime-only, so their lifecycle is unchanged and they are not restored after restart.
+
+Tabs are shown in the tabline, and the active workspace is shown in the statusline.
 
 ### Editing
 

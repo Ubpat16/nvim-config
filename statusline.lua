@@ -1,5 +1,9 @@
 local M = {}
 
+local function workspace_component()
+  return "WS: " .. require("config.tabs").workspace_current_name()
+end
+
 function M.setup()
   local sections = {
     lualine_a = { "mode" },
@@ -13,6 +17,7 @@ function M.setup()
       "encoding",
       "fileformat",
       "filetype",
+      workspace_component,
     },
     lualine_y = { "progress" },
     lualine_z = { "location" },
