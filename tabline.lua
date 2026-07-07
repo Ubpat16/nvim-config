@@ -10,7 +10,7 @@ local function tab_title(tab, index, current)
 end
 
 function M.render()
-  local tabs = vim.api.nvim_list_tabpages()
+  local tabs = require("config.tabs").current_workspace_tabs()
   local current = vim.api.nvim_get_current_tabpage()
 
   if #tabs == 0 then

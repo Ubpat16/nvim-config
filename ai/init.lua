@@ -45,11 +45,11 @@ function M.setup_copilot()
         },
       },
     },
-    logger = {
-      file = logs.path("copilot"),
-      file_log_level = vim.log.levels.INFO,
-      print_log_level = vim.log.levels.WARN,
-    },
+    -- logger = {
+    --   file = logs.path("copilot"),
+    --   file_log_level = vim.log.levels.INFO,
+    --   print_log_level = vim.log.levels.WARN,
+    -- },
   })
 end
 

@@ -265,7 +265,8 @@ Copilot insert-mode mappings:
 | Key                 | Action                              |
 | ------------------- | ----------------------------------- |
 | `<leader>bd`        | Smart close buffer                  |
-| `<leader>bc`        | Clear all buffers and file registry |
+| `<leader>bc`        | Clear current workspace buffers      |
+| `<leader>bzc`       | Clear all buffers and file registry   |
 | `<leader>bn` / `]b` | Next buffer in tab                  |
 | `<leader>bp` / `[b` | Previous buffer in tab              |
 | `<leader>bh`        | Move buffer to left split           |
@@ -276,8 +277,8 @@ Copilot insert-mode mappings:
 | `<leader>bsj`       | Move buffer to new lower split      |
 | `<leader>bsk`       | Move buffer to new upper split      |
 | `<leader>bsl`       | Move buffer to new right split      |
-| `<leader>tn`        | Next tab                            |
-| `<leader>tp`        | Previous tab                        |
+| `<leader>tn`        | Next tab in workspace               |
+| `<leader>tp`        | Previous tab in workspace           |
 | `<leader>to`        | New tab from current window         |
 | `<leader>tq`        | Close tab                           |
 | `<leader>tm`        | Move window to new tab              |
@@ -292,9 +293,9 @@ Copilot insert-mode mappings:
 | `<C-j>`             | Move to lower window                |
 | `<C-k>`             | Move to upper window                |
 
-Tabs are persisted across Neovim restarts. A new tab starts with one blank unnamed buffer in one window, and tab-local buffer navigation stays scoped to normal file buffers in the current tab. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Workspaces remain runtime-only, so their lifecycle is unchanged and they are not restored after restart.
+Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers, tab-local buffer navigation stays scoped to normal file buffers in the current tab, and normal file buffers remember their last cursor position when you switch away and back. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only, so their lifecycle is unchanged and they are not restored after restart.
 
-Tabs are shown in the tabline, and the active workspace is shown in the statusline.
+Tabs are shown in the tabline, scoped to the active workspace, and the statusline shows the active workspace name with neighbor arrows.
 
 ### Editing
 

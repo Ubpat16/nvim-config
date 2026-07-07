@@ -1132,18 +1132,7 @@ local function lc_move_window_to_new_tab()
 end
 
 local function lc_new_tab()
-  vim.cmd("tab split")
-  local target_tab = vim.api.nvim_get_current_tabpage()
-
-  local blank = vim.api.nvim_create_buf(true, false)
-  vim.bo[blank].bufhidden = "hide"
-  vim.bo[blank].swapfile = false
-  vim.api.nvim_win_set_buf(0, blank)
-  pcall(vim.cmd, "silent! only")
-
-  if vim.api.nvim_tabpage_is_valid(target_tab) then
-    vim.api.nvim_set_current_tabpage(target_tab)
-  end
+  require("config.tabs").new_tab()
 end
 
 local function lc_smart_quit()
@@ -1213,29 +1202,10 @@ end, { expr = true, desc = "Smart quit from command line" })
 -- Buffers: close, clear, and tab-local navigation.
 vim.keymap.set("n", "<leader>bd", lc_smart_quit, { desc = "Close buffer" })
 vim.keymap.set("n", "<leader>bc", function()
-  -- Get all listed buffers and their names BEFORE deleting them
-  local buffer_names = {}
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buflisted then
-      local buf_name = vim.api.nvim_buf_get_name(bufnr)
-      if buf_name ~= "" then
-        table.insert(buffer_names, buf_name)
-      end
-    end
-  end
-  
-  -- Clear all listed buffers
-  vim.cmd("bufdo bd")
-  
-  -- Clear file registry entries for buffers that were closed
-  for _, buf_name in ipairs(buffer_names) do
-    -- For buffers with file names, attempt to remove from last visited files
-    -- This approach forces cleanup of file registry entries
-    vim.cmd("silent! LastProjectFileForget " .. vim.fn.fnameescape(buf_name))
-  end
-  
-  -- Ensure a clean state by clearing any remaining file registry entries
-  vim.cmd("silent! LastProjectFileForget")
+  require("config.tabs").clear_workspace_buffers()
+end, { desc = "Clear current workspace buffers" })
+vim.keymap.set("n", "<leader>bzc", function()
+  require("config.tabs").clear_all_buffers()
 end, { desc = "Clear all buffers and file registry" })
 vim.keymap.set("n", "<leader>bn", function()
   lc_tab_buffer_jump(1)
@@ -1277,8 +1247,12 @@ vim.keymap.set("n", "<leader>bsl", function()
 end, { desc = "Move buffer to new right split" })
 
 -- Tabs.
-vim.keymap.set("n", "<leader>tn", ":tabnext<CR>", { desc = "Next tab" })
-vim.keymap.set("n", "<leader>tp", ":tabprevious<CR>", { desc = "Previous tab" })
+vim.keymap.set("n", "<leader>tn", function()
+  require("config.tabs").tab_next(1)
+end, { desc = "Next tab in workspace" })
+vim.keymap.set("n", "<leader>tp", function()
+  require("config.tabs").tab_previous()
+end, { desc = "Previous tab in workspace" })
 vim.keymap.set("n", "<leader>to", lc_new_tab, { desc = "New tab" })
 vim.keymap.set("n", "<leader>tq", ":tabclose<CR>", { desc = "Close tab" })
 vim.keymap.set("n", "<leader>tm", lc_move_window_to_new_tab, { desc = "Move window to new tab" })

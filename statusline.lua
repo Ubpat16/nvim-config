@@ -1,7 +1,7 @@
 local M = {}
 
 local function workspace_component()
-  return "WS: " .. require("config.tabs").workspace_current_name()
+  return require("config.tabs").workspace_statusline()
 end
 
 function M.setup()

@@ -2,6 +2,8 @@ local M = {}
 
 local routing_duplicate = false
 local creating_workspace = false
+local creating_tab = false
+local clearing_buffers = false
 local restoring_tabs = false
 local persisting_tabs = false
 local buffer_ownership = {}
@@ -10,6 +12,7 @@ local tab_all_buffers = {}
 local tab_floats = {}
 local tab_workspaces = {}
 local buffer_last_tabs = {}
+local buffer_last_cursor = {}
 local register_buffer_ownership
 local tab_workspace
 local normalized_buffer_name
@@ -23,6 +26,7 @@ local file_preview = {
   bufnr = nil,
   winid = nil,
 }
+local remove_tab_from_workspace
 
 local function valid_buf(bufnr)
   return type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr)
@@ -141,13 +145,71 @@ local function workspace_index(id)
   return nil
 end
 
+local function workspace_tab_list(workspace)
+  if type(workspace) ~= "table" then
+    return {}
+  end
+
+  workspace.tabs = workspace.tabs or {}
+  return workspace.tabs
+end
+
+local function remove_tab_from_all_workspaces(tab)
+  if not vim.api.nvim_tabpage_is_valid(tab) then
+    return
+  end
+
+  for _, id in ipairs(workspace_order) do
+    remove_tab_from_workspace(tab, id)
+  end
+end
+
+local function add_tab_to_workspace(tab, workspace_id)
+  local workspace = workspace_by_id(workspace_id)
+  if not workspace or not vim.api.nvim_tabpage_is_valid(tab) then
+    return
+  end
+
+  remove_tab_from_all_workspaces(tab)
+
+  local tabs = workspace_tab_list(workspace)
+  for _, existing in ipairs(tabs) do
+    if existing == tab then
+      return
+    end
+  end
+
+  tabs[#tabs + 1] = tab
+end
+
+remove_tab_from_workspace = function(tab, workspace_id)
+  local workspace = workspace_by_id(workspace_id)
+  if not workspace then
+    return
+  end
+
+  local tabs = workspace_tab_list(workspace)
+  for index = #tabs, 1, -1 do
+    if tabs[index] == tab then
+      table.remove(tabs, index)
+    end
+  end
+end
+
 local function workspace_tabs(id)
+  local workspace = workspace_by_id(id)
+  if not workspace then
+    return {}
+  end
+
   local tabs = {}
   for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
-    if tab_workspaces[tab_key(tab)] == id then
+    if vim.api.nvim_tabpage_is_valid(tab) and tab_workspaces[tab_key(tab)] == id then
       tabs[#tabs + 1] = tab
     end
   end
+
+  workspace.tabs = tabs
   return tabs
 end
 
@@ -159,6 +221,7 @@ local function create_workspace(name)
     name = name and name ~= "" and name or ("workspace-" .. id),
     last_tab = nil,
     last_tab_key = nil,
+    tabs = {},
   }
   workspace_order[#workspace_order + 1] = id
   return id
@@ -176,6 +239,7 @@ local function ensure_workspace()
       active_workspace = tab_workspaces[key]
     else
       tab_workspaces[key] = active_workspace
+      add_tab_to_workspace(tab, active_workspace)
     end
     workspaces[active_workspace].last_tab = tab
     workspaces[active_workspace].last_tab_key = key
@@ -238,12 +302,25 @@ local function cleanup_tabs()
 
   for _, id in ipairs(workspace_order) do
     local workspace = workspaces[id]
-    if workspace and workspace.last_tab_key and not tab_by_key(workspace.last_tab_key) then
-      local tab = workspace_tabs(id)[1]
-      workspace.last_tab = tab
-      workspace.last_tab_key = tab and tab_key(tab) or nil
+    if workspace then
+      local tabs = workspace_tabs(id)
+
+      if workspace.last_tab_key and not tab_by_key(workspace.last_tab_key) then
+        local tab = tabs[1]
+        workspace.last_tab = tab
+        workspace.last_tab_key = tab and tab_key(tab) or nil
+      elseif workspace.last_tab and not vim.api.nvim_tabpage_is_valid(workspace.last_tab) then
+        local tab = tabs[1]
+        workspace.last_tab = tab
+        workspace.last_tab_key = tab and tab_key(tab) or nil
+      end
     end
   end
+end
+
+local function refresh_workspace_ui()
+  pcall(vim.cmd, "redrawtabline")
+  pcall(vim.cmd, "redrawstatus")
 end
 
 local function add_buffer_to_tab(bufnr, tab)
@@ -387,6 +464,48 @@ register_buffer_ownership = function(bufnr, tab, opts)
   buffer_ownership[bufnr] = entry
 end
 
+local function snapshot_buffer_cursor(bufnr, win)
+  if not M.is_normal_file_buffer(bufnr) then
+    return
+  end
+
+  win = valid_win(win) and win or vim.api.nvim_get_current_win()
+  if not valid_win(win) or vim.api.nvim_win_get_buf(win) ~= bufnr then
+    return
+  end
+
+  local ok, cursor = pcall(vim.api.nvim_win_get_cursor, win)
+  if ok and type(cursor) == "table" and type(cursor[1]) == "number" and type(cursor[2]) == "number" then
+    buffer_last_cursor[bufnr] = { cursor[1], cursor[2] }
+  end
+end
+
+local function restore_buffer_cursor(bufnr, win)
+  if not M.is_normal_file_buffer(bufnr) then
+    return
+  end
+
+  local cursor = buffer_last_cursor[bufnr]
+  if type(cursor) ~= "table" then
+    return
+  end
+
+  win = valid_win(win) and win or vim.api.nvim_get_current_win()
+  if not valid_win(win) or vim.api.nvim_win_get_buf(win) ~= bufnr then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  if line_count <= 0 then
+    return
+  end
+
+  local line = math.max(1, math.min(tonumber(cursor[1]) or 1, line_count))
+  local line_text = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, false)[1] or ""
+  local col = math.max(0, math.min(tonumber(cursor[2]) or 0, #line_text))
+  pcall(vim.api.nvim_win_set_cursor, win, { line, col })
+end
+
 local function ensure_buffer_in_tab(bufnr, tab)
   if not valid_buf(bufnr) then
     return
@@ -485,6 +604,33 @@ local function reset_current_tab_to_blank(blank)
   end
 end
 
+local function initialize_blank_tab(tab, workspace_id, blank)
+  if not vim.api.nvim_tabpage_is_valid(tab) then
+    return nil
+  end
+
+  workspace_id = workspace_id or current_workspace()
+  local key = assign_new_tab_key(tab)
+  tab_workspaces[key] = workspace_id
+  tab_buffers[key] = {}
+  tab_all_buffers[key] = {}
+  add_tab_to_workspace(tab, workspace_id)
+
+  if valid_buf(blank) then
+    vim.bo[blank].bufhidden = "hide"
+    vim.bo[blank].swapfile = false
+    reset_current_tab_to_blank(blank)
+    add_buffer_to_tab(blank, tab)
+  end
+
+  if workspace_by_id(workspace_id) then
+    workspaces[workspace_id].last_tab = tab
+    workspaces[workspace_id].last_tab_key = key
+  end
+
+  return key
+end
+
 function M.current_tab_buffers()
   ensure_workspace()
   cleanup_tabs()
@@ -527,12 +673,50 @@ function M.is_in_current_tab(bufnr)
   return false
 end
 
+function M.new_tab()
+  ensure_workspace()
+
+  local workspace_id = current_workspace()
+  local previous_tab = current_tab()
+  local ok, err = pcall(function()
+    creating_tab = true
+    vim.cmd("tab split")
+  end)
+  creating_tab = false
+
+  if not ok then
+    vim.notify("Tab creation failed: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+  end
+
+  local tab = current_tab()
+  if not vim.api.nvim_tabpage_is_valid(tab) or tab == previous_tab then
+    vim.notify("Tab creation failed: new tab was not created", vim.log.levels.ERROR)
+    return false
+  end
+
+  local blank = vim.api.nvim_create_buf(true, false)
+  local init_ok, init_err = pcall(function()
+    creating_tab = true
+    initialize_blank_tab(tab, workspace_id, blank)
+  end)
+  creating_tab = false
+
+  if not init_ok then
+    vim.notify("Tab creation failed: " .. tostring(init_err), vim.log.levels.ERROR)
+    return false
+  end
+
+  return true
+end
+
 tab_workspace = function(tab)
   active_workspace = active_workspace or ensure_workspace()
   tab = tab or current_tab()
   local key = tab_key(tab)
   if vim.api.nvim_tabpage_is_valid(tab) and not tab_workspaces[key] then
     tab_workspaces[key] = active_workspace
+    add_tab_to_workspace(tab, active_workspace)
   end
   return tab_workspaces[key]
 end
@@ -610,6 +794,27 @@ function M.focus_buffer_window(bufnr)
     vim.api.nvim_set_current_tabpage(visible_tab)
     vim.api.nvim_set_current_win(win)
     return true
+  end
+
+  local owner = M.buffer_owner(bufnr)
+  if owner then
+    local owner_tab = tab_by_key(owner.tab_id or owner.last_seen_tab_id or -1)
+    local owner_workspace = owner.workspace_id or owner.last_seen_workspace_id
+    if owner_tab and owner_workspace then
+      if owner_workspace ~= current_workspace() and workspace_by_id(owner_workspace) then
+        active_workspace = owner_workspace
+      end
+
+      if vim.api.nvim_get_current_tabpage() ~= owner_tab then
+        vim.api.nvim_set_current_tabpage(owner_tab)
+      end
+
+      if vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) ~= bufnr then
+        vim.cmd("buffer " .. bufnr)
+      end
+
+      return true
+    end
   end
 
   local owner_tab = find_buffer_tab(bufnr)
@@ -999,6 +1204,7 @@ local function restore_tabs_state()
       tab_buffers[key] = {}
       tab_all_buffers[key] = {}
       tab_workspaces[key] = active_workspace
+      add_tab_to_workspace(tab, active_workspace)
 
       restore_tab_state(tab, tab_state)
       restored_tabs[#restored_tabs + 1] = {
@@ -1279,6 +1485,7 @@ end
 local function route_duplicate_buffer(bufnr, win)
   if creating_workspace
     or routing_duplicate
+    or clearing_buffers
     or restoring_tabs
     or persisting_tabs
     or not M.is_normal_file_buffer(bufnr)
@@ -1389,11 +1596,13 @@ function M.workspace_new(name)
   tab_workspaces[key] = id
   tab_buffers[key] = {}
   tab_all_buffers[key] = {}
+  add_tab_to_workspace(tab, id)
   add_buffer_to_tab(blank, tab)
 
   workspaces[id].last_tab = tab
   workspaces[id].last_tab_key = key
 
+  refresh_workspace_ui()
   vim.notify("Workspace: " .. workspaces[id].name, vim.log.levels.INFO)
   return true
 end
@@ -1418,12 +1627,14 @@ function M.workspace_switch(id)
     vim.cmd("tabnew")
     target = current_tab()
     tab_workspaces[tab_key(target)] = id
+    add_tab_to_workspace(target, id)
   end
 
   workspace.last_tab = target
   workspace.last_tab_key = tab_key(target)
   vim.api.nvim_set_current_tabpage(target)
   restore_floating_windows(target)
+  refresh_workspace_ui()
   vim.notify("Workspace: " .. workspace.name, vim.log.levels.INFO)
   return true
 end
@@ -1439,6 +1650,39 @@ function M.workspace_next(step)
   M.workspace_switch(target)
 end
 
+local function workspace_tab_index(tabs, tab)
+  for index, candidate in ipairs(tabs) do
+    if candidate == tab then
+      return index
+    end
+  end
+
+  return nil
+end
+
+function M.tab_next(step)
+  ensure_workspace()
+
+  local tabs = M.current_workspace_tabs()
+  if #tabs <= 1 then
+    return false
+  end
+
+  local current = current_tab()
+  local index = workspace_tab_index(tabs, current) or 1
+  local target = tabs[((index - 1 + step) % #tabs) + 1]
+  if not target or not vim.api.nvim_tabpage_is_valid(target) or target == current then
+    return false
+  end
+
+  vim.api.nvim_set_current_tabpage(target)
+  return true
+end
+
+function M.tab_previous()
+  return M.tab_next(-1)
+end
+
 function M.workspace_rename(name)
   ensure_workspace()
   if not name or name == "" then
@@ -1447,6 +1691,7 @@ function M.workspace_rename(name)
   end
 
   workspaces[active_workspace].name = name
+  refresh_workspace_ui()
   vim.notify("Workspace renamed: " .. name, vim.log.levels.INFO)
 end
 
@@ -1530,6 +1775,7 @@ function M.workspace_close()
     tab_buffers[key] = nil
     tab_all_buffers[key] = nil
     tab_workspaces[key] = nil
+    remove_tab_from_workspace(tab, closing)
   end
 
   wipe_owned_special_buffers(special_buffers, closing_tab_keys)
@@ -1543,6 +1789,158 @@ end
 function M.workspace_current_name()
   ensure_workspace()
   return workspaces[active_workspace].name
+end
+
+function M.workspace_statusline()
+  ensure_workspace()
+
+  local workspace = workspaces[active_workspace]
+  if not workspace then
+    return "WS: main."
+  end
+
+  local index = workspace_index(active_workspace) or 1
+  local total = #workspace_order
+  local left = index > 1 and "<< " or ""
+  local right = index < total and " >>" or ""
+  local punctuation = total <= 1 and "." or ""
+
+  return left .. "WS: " .. workspace.name .. right .. punctuation
+end
+
+local function scope_tab_buffers(tabs)
+  local buffers = {}
+  local seen = {}
+
+  for _, tab in ipairs(tabs) do
+    local key = tab_key(tab)
+    for _, bufnr in ipairs(tab_buffers[key] or {}) do
+      if valid_buf(bufnr) and M.is_normal_file_buffer(bufnr) and not seen[bufnr] then
+        seen[bufnr] = true
+        buffers[#buffers + 1] = bufnr
+      end
+    end
+  end
+
+  return buffers
+end
+
+local function clear_file_registry_names(buffer_list)
+  local names = {}
+  local seen = {}
+
+  for _, bufnr in ipairs(buffer_list) do
+    local name = normalized_buffer_name(bufnr)
+    if name and not seen[name] then
+      seen[name] = true
+      names[#names + 1] = name
+    end
+  end
+
+  for _, name in ipairs(names) do
+    pcall(vim.cmd, "silent! LastProjectFileForget " .. vim.fn.fnameescape(name))
+  end
+
+  pcall(vim.cmd, "silent! LastProjectFileForget")
+end
+
+local function tab_blank_buffer(tab)
+  if not vim.api.nvim_tabpage_is_valid(tab) then
+    return nil
+  end
+
+  local key = tab_key(tab)
+  for _, bufnr in ipairs(tab_all_buffers[key] or {}) do
+    if valid_buf(bufnr)
+      and vim.bo[bufnr].buftype == ""
+      and vim.api.nvim_buf_get_name(bufnr) == ""
+    then
+      return bufnr
+    end
+  end
+
+  return nil
+end
+
+local function blank_tab_windows(tabs)
+  local blanks = {}
+
+  for _, tab in ipairs(tabs) do
+    if vim.api.nvim_tabpage_is_valid(tab) then
+      local key = tab_key(tab)
+      local blank = blanks[key]
+      if not valid_buf(blank) then
+        blank = tab_blank_buffer(tab) or create_fallback_buffer()
+        blanks[key] = blank
+        add_buffer_to_tab(blank, tab)
+      end
+
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+        if M.is_normal_window(win) then
+          pcall(vim.api.nvim_win_set_buf, win, blank)
+        end
+      end
+    end
+  end
+end
+
+local function clear_buffers_for_tabs(tabs)
+  local buffers = scope_tab_buffers(tabs)
+  if #buffers == 0 then
+    clear_file_registry_names({})
+    blank_tab_windows(tabs)
+    return true
+  end
+
+  clearing_buffers = true
+  blank_tab_windows(tabs)
+
+  for _, bufnr in ipairs(buffers) do
+    if valid_buf(bufnr) then
+      pcall(vim.cmd, "silent! bdelete! " .. bufnr)
+    end
+  end
+  clearing_buffers = false
+
+  clear_file_registry_names(buffers)
+  return true
+end
+
+function M.clear_workspace_buffers()
+  local workspace_id = current_workspace()
+  cleanup_tabs()
+  local ok = clear_buffers_for_tabs(workspace_tabs(workspace_id))
+  active_workspace = workspace_id
+  return ok
+end
+
+function M.clear_all_buffers()
+  local workspace_id = current_workspace()
+  cleanup_tabs()
+  local buffers = {}
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if M.is_normal_file_buffer(bufnr) then
+      buffers[#buffers + 1] = bufnr
+    end
+  end
+
+  clearing_buffers = true
+  blank_tab_windows(vim.api.nvim_list_tabpages())
+
+  for _, bufnr in ipairs(buffers) do
+    pcall(vim.cmd, "silent! bdelete! " .. bufnr)
+  end
+  clearing_buffers = false
+
+  clear_file_registry_names(buffers)
+  active_workspace = workspace_id
+  return true
+end
+
+function M.current_workspace_tabs()
+  ensure_workspace()
+  cleanup_tabs()
+  return workspace_tabs(active_workspace)
 end
 
 function M.setup()
@@ -1565,7 +1963,8 @@ function M.setup()
   vim.api.nvim_create_autocmd("BufLeave", {
     group = vim.api.nvim_create_augroup("lc_tab_buffer_capture", { clear = true }),
     callback = function(event)
-      if restoring_tabs or persisting_tabs then
+      snapshot_buffer_cursor(event.buf)
+      if restoring_tabs or persisting_tabs or creating_workspace or creating_tab or clearing_buffers then
         return
       end
       local tab = tab_by_key(buffer_last_tabs[event.buf])
@@ -1579,7 +1978,7 @@ function M.setup()
   vim.api.nvim_create_autocmd({ "TabEnter", "TabNewEntered" }, {
     group = vim.api.nvim_create_augroup("lc_workspace_tab_tracking", { clear = true }),
     callback = function()
-      if restoring_tabs or persisting_tabs then
+      if restoring_tabs or persisting_tabs or creating_workspace or creating_tab or clearing_buffers then
         return
       end
       ensure_workspace()
@@ -1594,13 +1993,14 @@ function M.setup()
       workspaces[active_workspace].last_tab_key = key
       record_display_windows(tab)
       restore_floating_windows(tab)
+      restore_buffer_cursor(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()))
     end,
   })
 
   vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter", "WinEnter" }, {
     group = vim.api.nvim_create_augroup("lc_tab_file_routing", { clear = true }),
     callback = function(event)
-      if restoring_tabs or persisting_tabs then
+      if restoring_tabs or persisting_tabs or creating_workspace or creating_tab or clearing_buffers then
         return
       end
       local win = vim.api.nvim_get_current_win()
@@ -1612,6 +2012,7 @@ function M.setup()
           and vim.api.nvim_win_get_buf(win) == event.buf
         then
           add_buffer_to_tab(event.buf, tab)
+          restore_buffer_cursor(event.buf, win)
         end
       end
     end,
@@ -1635,6 +2036,7 @@ function M.setup()
       end
       buffer_last_tabs[event.buf] = nil
       buffer_ownership[event.buf] = nil
+      buffer_last_cursor[event.buf] = nil
     end,
   })
 

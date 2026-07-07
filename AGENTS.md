@@ -28,6 +28,9 @@ special buffers are workspace-local when they are shown in a workspace-owned
 tab, but they should not be included in Bufferline or normal file-buffer
 navigation.
 
+Normal file buffers also remember their last cursor position within the current
+session when you switch away and come back.
+
 File preview floats created by `config.tabs.preview_file()` use unlisted
 `nofile` buffers. They may be tracked as workspace-owned special buffers for
 cleanup, but they must not be added to `tab_buffers`, shown in Bufferline, or
@@ -53,8 +56,10 @@ not rename, duplicate, or delete buffers.
 A tab is a Neovim tabpage: a layout container for one or more windows. This repo
 persists tab identity, order, layout, and tracked normal file buffers across
 Neovim restarts in `tabs.lua`, while still tracking displayed buffers for
-workspace ownership and special-buffer cleanup. Tabs are presented in the
-tabline, while the workspace name is presented in the statusline.
+workspace ownership and special-buffer cleanup. New tabs start blank and do not
+inherit the previous tab's tracked file buffers. Tabs are presented in the
+tabline, but each workspace only shows its own tabs there. The statusline shows
+the active workspace name with neighbor arrows.
 
 Important details:
 
@@ -62,6 +67,8 @@ Important details:
   variable.
 - Bufferline and buffer next/previous navigation are scoped to the current tab's
   tracked normal file buffers.
+- Tab next/previous navigation is scoped to the active workspace, so cycling
+  tabs never crosses into another workspace.
 - A buffer may be loaded globally in Neovim, but this config only shows it in
   the current tab's navigation if it is tracked for that tab.
 - Special buffers can be owned by a tab/workspace without appearing in normal
@@ -163,6 +170,8 @@ Common keymaps:
 
 - `<leader>bn` / `]b`: next buffer in current tab
 - `<leader>bp` / `[b`: previous buffer in current tab
+- `<leader>bc`: clear the active workspace's normal file buffers
+- `<leader>bzc`: clear all buffers and file registry entries
 - `<leader>fp`: pick a file to preview in a floating window
 - `<leader>bh`, `<leader>bj`, `<leader>bk`, `<leader>bl`: move buffer to a
   neighboring split
