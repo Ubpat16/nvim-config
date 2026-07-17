@@ -9,7 +9,7 @@ return {
       quickfile = { enabled = true },
       bigfile = { enabled = true },
       dashboard = { enabled = true },
-      explorer = { enabled = true },
+      explorer = { enabled = false },
       image = { enabled = true },
       picker = {
         enabled = true,

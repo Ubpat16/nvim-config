@@ -2,7 +2,8 @@
 
 This file documents repository-specific conventions for agents working on this
 Neovim config. Treat the implementation as the source of truth, but keep this
-document updated when changing the window, tab, workspace, or buffer model.
+document updated when changing the window, tab, workspace, buffer, or
+project-state model.
 
 ## Buffers, Windows, Tabs, and Workspaces
 
@@ -58,10 +59,12 @@ not rename, duplicate, or delete buffers.
 A tab is a Neovim tabpage: a layout container for one or more windows. This repo
 persists tab identity, order, layout, and tracked normal file buffers across
 Neovim restarts in `tabs.lua`, while still tracking displayed buffers for
-workspace ownership and special-buffer cleanup. New tabs start blank and do not
-inherit the previous tab's tracked file buffers. Tabs are presented in the
-tabline, but each workspace only shows its own tabs there. The statusline shows
-the active workspace name with neighbor arrows.
+workspace ownership and special-buffer cleanup. Persisted tab state now lives in
+project-scoped files under `stdpath("state")/projects/` and is gated by the
+startup project root. New tabs start blank and do not inherit the previous tab's
+tracked file buffers. Tabs are presented in the tabline, but each workspace only
+shows its own tabs there. The statusline shows the active workspace name with
+neighbor arrows.
 
 Important details:
 
@@ -107,9 +110,9 @@ the workspace being left. The workspace state lives in:
 
 Each workspace stores its name and last active tab. Creating, switching,
 renaming, listing, and closing workspaces is implemented in `config.tabs`.
-Workspace IDs, names, order, and tab membership must not be written to
-`tab-state.json`. On restart, persisted native tabs are restored into one fresh
-`main` workspace.
+Workspace IDs, names, order, and tab membership must not be written to the
+project-state file. On restart, persisted native tabs are restored into one
+fresh `main` workspace.
 Split windows and special plugin panes remain in the workspace where they were
 opened. Floating windows are snapshotted when leaving a tab and restored when
 returning when their buffers are still valid. Closing a workspace closes its tabs

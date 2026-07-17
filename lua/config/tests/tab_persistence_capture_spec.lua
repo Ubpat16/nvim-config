@@ -1,5 +1,6 @@
 local root = vim.fn.tempname()
 vim.fn.mkdir(root, "p")
+vim.cmd.cd(root)
 
 local files = {}
 for index = 1, 4 do
@@ -20,7 +21,8 @@ end
 vim.api.nvim_set_current_tabpage(vim.api.nvim_list_tabpages()[2])
 
 vim.api.nvim_exec_autocmds("VimLeavePre", {})
-local state_file = assert(io.open(vim.fs.joinpath(vim.fn.stdpath("state"), "tab-state.json"), "r"))
+local project_state = require("config.project_state")
+local state_file = assert(io.open(project_state.state_path_for_root(root), "r"))
 local state = vim.json.decode(state_file:read("*a"))
 state_file:close()
 

@@ -18,12 +18,12 @@ local tab_buffer_cursors = {}
 local register_buffer_ownership
 local tab_workspace
 local normalized_buffer_name
+local project_state = require("config.project_state")
 local workspaces = {}
 local workspace_order = {}
 local active_workspace = nil
 local next_workspace_id = 1
 local next_tab_id = 1
-local tab_state_path = vim.fs.joinpath(vim.fn.stdpath("state"), "tab-state.json")
 local file_preview = {
   bufnr = nil,
   winid = nil,
@@ -912,36 +912,29 @@ normalized_buffer_name = function(bufnr)
 end
 
 local function read_tab_state()
-  local file = io.open(tab_state_path, "r")
-  if not file then
-    return nil
+  local root = project_state.startup_context().root
+  local state = project_state.read_root_state(root)
+  if type(state) == "table" and type(state.tabs) == "table" then
+    return state
   end
 
-  local content = file:read("*a")
-  file:close()
-
-  if content == nil or content == "" then
-    return nil
-  end
-
-  local ok, decoded = pcall(vim.json.decode, content)
-  if ok and type(decoded) == "table" and type(decoded.tabs) == "table" then
-    return decoded
-  end
-
-  return nil
+  return project_state.legacy_tab_state_for_root(root)
 end
 
 local function write_tab_state(state)
-  vim.fn.mkdir(vim.fn.fnamemodify(tab_state_path, ":h"), "p")
-  local file = io.open(tab_state_path, "w")
-  if not file then
-    return false
-  end
-
-  file:write(vim.json.encode(state))
-  file:close()
-  return true
+  local root = project_state.startup_context().root
+  return project_state.update_root_state(root, function(existing)
+    existing.active_tab_id = state.active_tab_id
+    existing.next_tab_id = state.next_tab_id
+    existing.tabs = vim.tbl_map(function(tab)
+      local clean = vim.deepcopy(tab)
+      clean.workspace_id = nil
+      return clean
+    end, state.tabs or {})
+    existing.workspaces = nil
+    existing.version = state.version or existing.version or 2
+    return existing
+  end)
 end
 
 local function save_buffer_state(bufnr)
@@ -1210,6 +1203,10 @@ local function persist_tabs_state()
 end
 
 local function restore_tabs_state()
+  if not project_state.restore_allowed() then
+    return false
+  end
+
   local state = read_tab_state()
   if type(state) ~= "table" then
     return false

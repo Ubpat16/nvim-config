@@ -3,6 +3,7 @@ vim.fn.mkdir(state_dir, "p")
 
 local project_dir = vim.fn.tempname()
 vim.fn.mkdir(project_dir, "p")
+vim.cmd.cd(project_dir)
 local restored_files = {}
 for index = 1, 2 do
   local path = vim.fs.joinpath(project_dir, "restored-" .. index .. ".txt")
@@ -10,7 +11,8 @@ for index = 1, 2 do
   restored_files[index] = vim.fs.normalize(vim.uv.fs_realpath(path) or path)
 end
 
-local state_file = vim.fs.joinpath(state_dir, "tab-state.json")
+local project_state = require("config.project_state")
+local state_file = project_state.state_path_for_root(project_dir)
 local file = assert(io.open(state_file, "w"))
 file:write(vim.json.encode({
   version = 1,
