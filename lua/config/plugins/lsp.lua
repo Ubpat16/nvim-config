@@ -1,4 +1,5 @@
 local python = require("config.python")
+local project_config = require("config.project_config")
 
 return {
   {
@@ -247,6 +248,7 @@ return {
         group = vim.api.nvim_create_augroup("lc_lsp_attach", { clear = true }),
         callback = function(event)
           local bufnr = event.buf
+          project_config.apply_lsp_settings(bufnr)
           if vim.bo[bufnr].filetype == "python" then
             vim.schedule(function()
               python.apply_project_python(bufnr)

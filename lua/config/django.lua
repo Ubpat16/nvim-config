@@ -1,4 +1,5 @@
 local M = {}
+local project_config = require("config.project_config")
 
 local SCRIPT_PATTERNS = {
   "/main%.py$",
@@ -42,6 +43,17 @@ local function current_path()
 end
 
 function M.find_manage_py_root(start_path)
+  local profile = project_config.get(start_path or current_path())
+  if profile.django.root then
+    return profile.django.root
+  end
+  if profile.django.manage_py then
+    return normalize(vim.fn.fnamemodify(profile.django.manage_py, ":h"))
+  end
+  if profile.project.root then
+    return profile.project.root
+  end
+
   local start = start_path or current_path()
   if vim.fn.filereadable(start) == 1 then
     start = vim.fn.fnamemodify(start, ":p:h")
@@ -79,12 +91,13 @@ function M.find_env_file(root)
 end
 
 function M.resolve_context(start_path)
+  local profile = project_config.get(start_path or current_path())
   local root = M.find_manage_py_root(start_path)
   if not root then
     return nil, "No Django project found. Expected a manage.py above the current file or cwd."
   end
 
-  local env_file = M.find_env_file(root)
+  local env_file = profile.django.env_file or M.find_env_file(root)
   if not env_file then
     return nil, "No env file found. Expected .env.test or .env-test in the Django project root."
   end
@@ -92,7 +105,7 @@ function M.resolve_context(start_path)
   return {
     root = root,
     env_file = env_file,
-    manage_py = vim.fs.joinpath(root, "manage.py"),
+    manage_py = profile.django.manage_py or vim.fs.joinpath(root, "manage.py"),
   }
 end
 
@@ -104,7 +117,8 @@ function M.base_manage_command(context)
   return shell_prefix(context.root)
     .. "uv run --env-file "
     .. vim.fn.shellescape(context.env_file)
-    .. " python manage.py"
+    .. " python "
+    .. vim.fn.shellescape(context.manage_py)
 end
 
 function M.manage_command(args, start_path)

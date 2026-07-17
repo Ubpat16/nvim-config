@@ -167,8 +167,10 @@ change explicitly alters the workspace model.
 - `tabs.lua`: source of truth for runtime workspace, tab, window, and buffer
   behavior.
 - `project_config.lua`: loads the nearest project-owned JSON `nvim.config` and
-  exposes validated project defaults. Version one supports
-  `neotest.args` as an array of strings.
+  exposes a validated, reloadable project profile for editor options, Python,
+  Django, tests, formatting, linting, LSP, DAP, and Python run helpers.
+- `project_commands.lua`: builds shell-safe commands from the active project
+  profile for direct pytest and Python execution.
 - `tabline.lua`: renders workspace-local tab labels for Bufferline's custom
   right-side area. Visible numbering starts at 1 in each workspace, while click
   targets use the underlying native tab number.
@@ -230,6 +232,11 @@ these mappings.
 - Resolve project configuration from the active file or test position, not only
   from Neovim's startup directory. Keep `nvim.config` data-only; never execute
   it as Lua or a shell script.
+- Resolve paths in `nvim.config` relative to that file. `project.root` controls
+  tool working directories but must not change project-state persistence keys.
+- Read project settings at buffer or action time so one Neovim session can host
+  multiple projects. Preserve valid fields when another field is invalid and
+  warn once per changed invalid config version.
 - When changing keymaps, update both `keymaps.lua` and `README.md`.
 - When changing terminology or the ownership model, update this file first or in
   the same commit.

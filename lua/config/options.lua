@@ -153,5 +153,5 @@ vim.diagnostic.config({
   float = { border = "rounded", source = "if_many" },
 })
 
---- Walk upward from `start_dir` and return the first usable venv interpreter, or nil.
----@param start_dir string
+-- Register project-local option and LSP profile refreshes after base FileType rules.
+require("config.project_config").setup()

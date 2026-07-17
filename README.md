@@ -110,19 +110,92 @@ Explicit project commands that use `uv run`, such as the pytest helpers, still u
 
 ## Project Configuration
 
-Project-specific test settings can be stored in a JSON file named `nvim.config`. Neovim searches upward from the active file or test position, falling back to the current working directory, so one session can use different settings for different projects.
+Project-specific settings can be stored in a JSON file named `nvim.config`. Neovim searches upward from the active file or test position, falling back to the current working directory, so one session can use different settings for different projects.
 
 ```json
 {
+  "project": {
+    "root": "backend"
+  },
+  "editor": {
+    "autosave": true,
+    "options": {
+      "expandtab": true,
+      "shiftwidth": 4,
+      "tabstop": 4,
+      "softtabstop": 4,
+      "textwidth": 100,
+      "colorcolumn": "100",
+      "wrap": false,
+      "spell": false
+    }
+  },
+  "python": {
+    "interpreter": ".venv/bin/python"
+  },
+  "django": {
+    "root": "backend",
+    "manage_py": "backend/manage.py",
+    "env_file": ".env.test"
+  },
   "neotest": {
-    "args": ["--ds=settings.personal_tests"]
+    "args": ["--ds=settings.personal_tests"],
+    "python": { "runner": "pytest" },
+    "jest": { "args": ["--runInBand"] }
+  },
+  "pytest": {
+    "direct_args": ["--reuse-db"],
+    "env_file": ".env.test"
+  },
+  "formatting": {
+    "on_save": true,
+    "timeout_ms": 5000,
+    "by_filetype": {
+      "python": ["ruff_fix_imports", "black"]
+    }
+  },
+  "linting": {
+    "enabled": true,
+    "by_filetype": {
+      "typescript": ["eslint_d"]
+    }
+  },
+  "lsp": {
+    "settings": {
+      "pyright": {
+        "python": {
+          "analysis": { "typeCheckingMode": "strict" }
+        }
+      }
+    }
+  },
+  "dap": {
+    "python": {
+      "just_my_code": false,
+      "env_file": ".env.test",
+      "django_runserver_args": ["runserver", "--noreload"],
+      "celery_app": "config",
+      "celery_args": ["worker", "-l", "info", "-P", "solo"],
+      "attach_host": "127.0.0.1",
+      "attach_port": 5678
+    }
+  },
+  "run": {
+    "python": {
+      "args": [],
+      "env_file": ".env"
+    }
   }
 }
 ```
 
-`neotest.args` must be an array of strings. These defaults apply to all neotest runs and to the `<leader>pt`, `<leader>pf`, and `<leader>pa` `uv pytest` helpers. Run-specific arguments such as `--pdb` or arguments entered through the pytest prompt are appended after the project defaults.
+All configured paths are resolved relative to the selected `nvim.config`. `project.root` changes tool and command working directories, but project-scoped tab and recent-file persistence continues to use the detected Git/project root. Env-file paths may point to files containing secrets; literal environment values and arbitrary shell commands are not accepted by the schema.
 
-The file is re-read automatically before the next test run when it changes. Missing files preserve the normal defaults; malformed JSON or an invalid schema produces a warning and safely ignores the project settings. `nvim.config` is data-only and cannot execute Lua.
+`neotest.args` remains backward compatible and applies to neotest plus the `<leader>pt`, `<leader>pf`, and `<leader>pa` direct pytest helpers. `pytest.direct_args` applies only to those direct helpers. Run-specific arguments such as `--pdb` or prompted pytest arguments remain appended by the invoking command.
+
+Editor options are buffer-local and limited to `expandtab`, `shiftwidth`, `tabstop`, `softtabstop`, `textwidth`, `colorcolumn`, `wrap`, and `spell`. Formatter and linter entries replace the defaults for the named filetypes while unspecified filetypes keep their normal defaults. LSP settings are merged over the normal server settings, and DAP/neotest values are resolved when an action runs.
+
+The file is checked for changes before each profile read and safe settings are reapplied on buffer and directory events. Missing fields preserve the normal defaults. Invalid or unknown fields produce one warning per changed file version and are ignored without discarding valid sibling settings. `nvim.config` takes precedence over inferred or standard project settings where both provide a value, remains data-only, and cannot execute Lua.
 
 ## AI Setup
 

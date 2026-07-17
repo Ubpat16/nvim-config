@@ -1,4 +1,5 @@
 local M = {}
+local project_config = require("config.project_config")
 
 local cached_global_python = nil
 local cached_project_pythons = {}
@@ -58,6 +59,18 @@ local function pyenv_global_python()
 end
 
 local function project_root(bufnr, start_dir)
+  local start_path = start_dir
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    local name = vim.api.nvim_buf_get_name(bufnr)
+    if name ~= "" then
+      start_path = name
+    end
+  end
+  local configured = project_config.get(start_path).project.root
+  if configured then
+    return configured
+  end
+
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
     local root = vim.fs.root(bufnr, { ".venv", "venv", "env", "uv.lock", "pyproject.toml", "pytest.ini", "manage.py", ".git" })
     if root then
@@ -172,6 +185,12 @@ function M.project_python(bufnr, start_dir)
     end
   end
 
+  local profile = project_config.get(start_dir or name)
+  local configured = normalize_executable(profile.python.interpreter)
+  if configured then
+    return configured
+  end
+
   local root = project_root(bufnr, start_dir)
   if root and cached_project_pythons[root] and vim.fn.executable(cached_project_pythons[root]) == 1 then
     return cached_project_pythons[root]
@@ -243,11 +262,12 @@ function M.apply_project_python(bufnr)
     vim.env.VIRTUAL_ENV = vim.fn.fnamemodify(py, ":h:h")
   end
 
+  project_config.apply_lsp_settings(bufnr)
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
     if client.name == "pyright" then
       client.settings = client.settings or {}
       client.settings.python = vim.tbl_deep_extend("force", client.settings.python or {}, { pythonPath = py })
-      client:notify("workspace/didChangeConfiguration", { settings = nil })
+      client:notify("workspace/didChangeConfiguration", { settings = client.settings })
     end
   end
 end

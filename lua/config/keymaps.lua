@@ -2,7 +2,7 @@
 local django = require("config.django")
 local logs = require("config.logs")
 local python_config = require("config.python")
-local project_config = require("config.project_config")
+local project_commands = require("config.project_commands")
 
 -- Git hunk fallback mappings are replaced by Gitsigns when it attaches.
 local function lc_gitsigns_not_attached()
@@ -1657,11 +1657,6 @@ vim.keymap.set("n", "[m", function()
   require("neotest").jump.prev({ status = "failed" })
 end, { desc = "Previous failed test" })
 
--- Pytest via uv.
-local function lc_find_pytest_root(start_path)
-  return vim.fs.find({ "pyproject.toml", "pytest.ini", ".git" }, { path = start_path, upward = true })[1]
-end
-
 local function lc_nearest_pytest_target(file)
   local cursor_line = vim.fn.line(".")
   local lines = vim.api.nvim_buf_get_lines(0, 0, cursor_line, false)
@@ -1702,27 +1697,13 @@ end
 
 local function lc_pytest_command(target)
   local file = vim.fn.expand("%:p")
-  local start_path = file ~= "" and vim.fn.fnamemodify(file, ":h") or vim.fn.getcwd()
-  local root_marker = lc_find_pytest_root(start_path)
-  local root = root_marker and vim.fn.fnamemodify(root_marker, ":h") or vim.fn.getcwd()
-  local env_file = django.find_env_file(root)
-  local command = "cd " .. vim.fn.shellescape(root) .. " && uv run "
-
-  if env_file then
-    command = command .. "--env-file " .. vim.fn.shellescape(env_file) .. " "
-  end
-
-  command = command .. "pytest --reuse-db "
-  for _, arg in ipairs(project_config.neotest_args(file ~= "" and file or start_path)) do
-    command = command .. vim.fn.shellescape(arg) .. " "
-  end
+  local target_path = nil
   if target == "nearest" then
-    command = command .. vim.fn.shellescape(lc_nearest_pytest_target(file))
+    target_path = lc_nearest_pytest_target(file)
   elseif target == "file" then
-    command = command .. vim.fn.shellescape(file)
+    target_path = file
   end
-
-  return command
+  return project_commands.pytest({ file = file, target = target_path })
 end
 
 local function lc_run_pytest(target)
@@ -1826,14 +1807,14 @@ vim.api.nvim_create_autocmd("FileType", {
 
 -- Run current Python file.
 vim.keymap.set("n", "<leader>rp", function()
-  local content = vim.fn.expand("%")
+  local content = vim.fn.expand("%:p")
 
   if content == "" then
     vim.notify("Nothing to run", vim.log.levels.WARN)
     return
   end
 
-  vim.cmd("!uv run python " .. vim.fn.shellescape(content))
+  django.run_in_shell(project_commands.python(content))
 end)
 
 local function safe_cmd(cmd)

@@ -1,17 +1,37 @@
 local M = {}
 
 local conform_util = require("conform.util")
+local project_config = require("config.project_config")
 
 local function python_project_root(ctx)
   local bufnr = ctx.bufnr or ctx.buf or 0
+  local configured = project_config.get(project_config.start_path(bufnr)).project.root
+  if configured then
+    return configured
+  end
   return vim.fs.root(bufnr, { "uv.lock", "pyproject.toml", "pytest.ini", ".git" }) or vim.fn.getcwd()
 end
 
+function M.options_for_buffer(bufnr)
+  bufnr = bufnr or 0
+  local profile = project_config.get(project_config.start_path(bufnr))
+  local filetype = vim.bo[bufnr].filetype
+  return {
+    formatters = vim.deepcopy(profile.formatting.by_filetype[filetype]),
+    timeout_ms = profile.formatting.timeout_ms or (filetype == "python" and 5000 or 1000),
+    lsp_format = (filetype == "c" or filetype == "cpp") and "never" or "fallback",
+    on_save = profile.formatting.on_save,
+  }
+end
+
 function M.format(opts)
+  local bufnr = opts and opts.bufnr or 0
+  local configured = M.options_for_buffer(bufnr)
   opts = vim.tbl_extend("force", {
     bufnr = 0,
-    lsp_format = "fallback",
-    timeout_ms = 3000,
+    formatters = configured.formatters,
+    lsp_format = configured.lsp_format,
+    timeout_ms = configured.timeout_ms,
   }, opts or {})
 
   local did_attempt = require("conform").format(opts)
@@ -22,19 +42,7 @@ end
 
 function M.setup()
   require("conform").setup({
-    formatters_by_ft = {
-      python = { "ruff_fix_imports", "black" },
-      javascript = { "prettier" },
-      javascriptreact = { "prettier" },
-      typescript = { "prettier" },
-      typescriptreact = { "prettier" },
-      json = { "prettier" },
-      html = { "prettier" },
-      htmldjango = { "prettier" },
-      css = { "prettier" },
-      yaml = { "prettier" },
-      markdown = { "prettier" },
-    },
+    formatters_by_ft = project_config.defaults().formatting.by_filetype,
     default_format_opts = {
       lsp_format = "fallback",
     },
@@ -88,11 +96,14 @@ function M.setup()
       },
     },
     format_on_save = function(bufnr)
-      local disable_filetypes = { c = true, cpp = true }
-      local filetype = vim.bo[bufnr].filetype
+      local configured = M.options_for_buffer(bufnr)
+      if not configured.on_save then
+        return nil
+      end
       return {
-        timeout_ms = filetype == "python" and 5000 or 1000,
-        lsp_format = disable_filetypes[filetype] and "never" or "fallback",
+        formatters = configured.formatters,
+        timeout_ms = configured.timeout_ms,
+        lsp_format = configured.lsp_format,
       }
     end,
   })

@@ -1,3 +1,5 @@
+local project_config = require("config.project_config")
+
 local function lc_autosave_buffer(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -12,6 +14,9 @@ local function lc_autosave_buffer(bufnr)
     return
   end
   if vim.api.nvim_buf_get_name(bufnr) == "" then
+    return
+  end
+  if not project_config.get(project_config.start_path(bufnr)).editor.autosave then
     return
   end
 

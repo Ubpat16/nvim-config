@@ -17,22 +17,23 @@ return {
     event = { "BufReadPre", "BufNewFile" },
     config = function()
       local lint = require("lint")
-      if vim.fn.executable("eslint_d") == 1 then
-        lint.linters_by_ft = {
-          javascript = { "eslint_d" },
-          javascriptreact = { "eslint_d" },
-          typescript = { "eslint_d" },
-          typescriptreact = { "eslint_d" },
-        }
-      else
-        lint.linters_by_ft = {}
-      end
+      lint.linters_by_ft = {}
 
       local lint_augroup = vim.api.nvim_create_augroup("lint", { clear = true })
       vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
         group = lint_augroup,
-        callback = function()
-          lint.try_lint()
+        callback = function(event)
+          local profile = project_config.get(project_config.start_path(event.buf))
+          if not profile.linting.enabled then
+            return
+          end
+          local configured = vim.deepcopy(profile.linting.by_filetype[vim.bo[event.buf].filetype] or {})
+          configured = vim.tbl_filter(function(name)
+            return name ~= "eslint_d" or vim.fn.executable("eslint_d") == 1
+          end, configured)
+          if #configured > 0 then
+            lint.try_lint(configured)
+          end
         end,
       })
     end,
@@ -59,29 +60,49 @@ return {
         return vim.fn.getcwd()
       end
 
+      local function current_profile()
+        return project_config.get(project_config.start_path())
+      end
+
       local function project_python()
         return python.project_python(nil, current_file_dir()) or "python3"
       end
 
       local function django_root()
-        return django.find_manage_py_root(current_file_dir()) or vim.fn.getcwd()
+        local profile = current_profile()
+        return profile.django.root
+          or profile.project.root
+          or django.find_manage_py_root(current_file_dir())
+          or vim.fn.getcwd()
       end
 
       local function manage_py()
-        return vim.fs.joinpath(django_root(), "manage.py")
+        return current_profile().django.manage_py or vim.fs.joinpath(django_root(), "manage.py")
       end
 
-      require("dap-python").setup(project_python())
+      local function dap_python()
+        return current_profile().dap.python
+      end
+
+      local dap_python = require("dap-python")
+      dap_python.setup(project_python())
       local dap = require("dap")
+      dap.listeners.on_config["lc_project_python_adapter"] = function(config)
+        if config.type == "python" or config.type == "debugpy" then
+          dap_python.setup(project_python(), { include_configs = false })
+        end
+        return config
+      end
 
       table.insert(dap.configurations.python, {
         name = "Django: manage.py runserver",
         type = "python",
         request = "launch",
         program = manage_py,
-        args = { "runserver", "--noreload" },
+        args = function() return vim.deepcopy(dap_python().django_runserver_args) end,
         django = true,
-        justMyCode = false,
+        justMyCode = function() return dap_python().just_my_code end,
+        envFile = function() return dap_python().env_file end,
         console = "integratedTerminal",
         cwd = django_root,
         pythonPath = project_python,
@@ -96,7 +117,8 @@ return {
           return { "test", vim.fn.expand("%:p") }
         end,
         django = true,
-        justMyCode = false,
+        justMyCode = function() return dap_python().just_my_code end,
+        envFile = function() return dap_python().env_file end,
         console = "integratedTerminal",
         cwd = django_root,
         pythonPath = project_python,
@@ -107,8 +129,14 @@ return {
         type = "python",
         request = "launch",
         module = "celery",
-        args = { "-A", "config", "worker", "-l", "info", "-P", "solo" },
-        justMyCode = false,
+        args = function()
+          local configured = dap_python()
+          local args = { "-A", configured.celery_app }
+          vim.list_extend(args, vim.deepcopy(configured.celery_args))
+          return args
+        end,
+        justMyCode = function() return dap_python().just_my_code end,
+        envFile = function() return dap_python().env_file end,
         console = "integratedTerminal",
         cwd = django_root,
         pythonPath = project_python,
@@ -118,7 +146,10 @@ return {
         name = "Python: attach debugpy (5678)",
         type = "python",
         request = "attach",
-        connect = { host = "127.0.0.1", port = 5678 },
+        connect = function()
+          local configured = dap_python()
+          return { host = configured.attach_host, port = configured.attach_port }
+        end,
         pythonPath = project_python,
       })
     end,
@@ -161,19 +192,38 @@ return {
       end
       vim.g.lc_neotest_setup_done = true
 
+      local jest = require("neotest-jest")({})
+      local jest_build_spec = jest.build_spec
+      jest.build_spec = function(args)
+        local data = args.tree and args.tree:data() or {}
+        local profile = project_config.get(data.path)
+        local configured = vim.deepcopy(profile.neotest.jest.args)
+        if args.extra_args then
+          vim.list_extend(configured, args.extra_args)
+        end
+        args = vim.tbl_extend("force", {}, args, { extra_args = configured })
+        return jest_build_spec(args)
+      end
+
       require("neotest").setup({
         adapters = {
           require("neotest-python")({
-            dap = { justMyCode = false },
-            runner = "pytest",
+            dap = {
+              justMyCode = function()
+                return project_config.get(project_config.start_path()).dap.python.just_my_code
+              end,
+            },
+            runner = function()
+              return project_config.get(project_config.start_path()).neotest.python.runner
+            end,
             args = function(_, position)
               return project_config.neotest_args(position and position.path or nil)
             end,
             python = function()
-              return python.project_python(nil, vim.fn.getcwd()) or "python3"
+              return python.project_python(nil, project_config.start_path()) or "python3"
             end,
           }),
-          require("neotest-jest")({}),
+          jest,
         },
         summary = {
           follow = false,
