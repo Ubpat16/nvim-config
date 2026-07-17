@@ -190,6 +190,19 @@ function M.write_root_state(root, state)
   return true
 end
 
+function M.clear_root_state(root)
+  local path = state_path(root)
+  if not path then
+    return false
+  end
+
+  if vim.fn.filereadable(path) == 1 then
+    return vim.fn.delete(path) == 0
+  end
+
+  return true
+end
+
 function M.update_root_state(root, updater)
   local current = M.read_root_state(root) or {
     version = 2,

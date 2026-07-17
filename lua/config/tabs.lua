@@ -1901,6 +1901,13 @@ local function clear_file_registry_names(buffer_list)
   pcall(vim.cmd, "silent! LastProjectFileForget")
 end
 
+local function clear_project_state_for_current_root()
+  local root = project_state.startup_context().root
+  if root then
+    project_state.clear_root_state(root)
+  end
+end
+
 local function tab_blank_buffer(tab)
   if not vim.api.nvim_tabpage_is_valid(tab) then
     return nil
@@ -1968,6 +1975,7 @@ function M.clear_workspace_buffers()
   local workspace_id = current_workspace()
   cleanup_tabs()
   local ok = clear_buffers_for_tabs(workspace_tabs(workspace_id))
+  clear_project_state_for_current_root()
   active_workspace = workspace_id
   return ok
 end
@@ -1992,6 +2000,7 @@ function M.clear_all_buffers()
   clearing_buffers = false
 
   clear_file_registry_names(buffers)
+  clear_project_state_for_current_root()
   active_workspace = workspace_id
   return true
 end
