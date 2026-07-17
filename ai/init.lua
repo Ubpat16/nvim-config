@@ -16,8 +16,8 @@ function M.setup_copilot()
       enabled = false,
     },
     suggestion = {
-      enabled = true,
-      auto_trigger = true,
+      enabled = false,
+      auto_trigger = false,
       hide_during_completion = false,
       debounce = 75,
       trigger_on_accept = true,

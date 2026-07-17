@@ -20,6 +20,7 @@ This config is organized as Lua modules under `lua/config` and loaded from a min
 - Neotest for Python and JavaScript test workflows
 - Django command helpers
 - Copilot, Copilot Chat, and Codex integrations
+- Snacks notifier, input, quickfile, bigfile, dashboard, explorer, image, and picker modules
 - Autosave and last-project-file restore helpers
 - REST client support for `.http` files
 
@@ -37,6 +38,7 @@ Install these system tools before using the config:
 - `uv`
 - GitHub CLI, `gh`
 - A Nerd Font for icons
+- A terminal that supports Kitty Graphics Protocol if you want inline image rendering
 
 Optional but recommended:
 
@@ -106,6 +108,22 @@ export NVIM_PYTHON=/absolute/path/to/python
 
 Explicit project commands that use `uv run`, such as the pytest helpers, still use the project's `uv` environment by design.
 
+## Project Configuration
+
+Project-specific test settings can be stored in a JSON file named `nvim.config`. Neovim searches upward from the active file or test position, falling back to the current working directory, so one session can use different settings for different projects.
+
+```json
+{
+  "neotest": {
+    "args": ["--ds=settings.personal_tests"]
+  }
+}
+```
+
+`neotest.args` must be an array of strings. These defaults apply to all neotest runs and to the `<leader>pt`, `<leader>pf`, and `<leader>pa` `uv pytest` helpers. Run-specific arguments such as `--pdb` or arguments entered through the pytest prompt are appended after the project defaults.
+
+The file is re-read automatically before the next test run when it changes. Missing files preserve the normal defaults; malformed JSON or an invalid schema produces a warning and safely ignores the project settings. `nvim.config` is data-only and cannot execute Lua.
+
 ## AI Setup
 
 ### OpenAI Commit and PR Helpers
@@ -145,6 +163,12 @@ Use `:AILogs` or `<leader>al` to tail AI logs in a terminal split. This follows:
 Use `:PluginLogs [source]` to tail plugin logs. Supported sources are `all`, `ai`, `nvim`, `openai`, `copilot`, and `codex`.
 
 OpenAI request logs include request metadata, response sizes, and errors. They do not include prompts, diffs, responses, or API keys.
+
+### Snacks
+
+Snacks is enabled for notifications, input prompts, quickfile handling, large-file detection, dashboard, explorer, image rendering, and picker-backed `vim.ui.select`.
+
+The existing `<leader>e` file explorer mapping still opens NvimTree, so enabling Snacks explorer does not replace the current explorer workflow.
 
 ## Git Workflow
 
@@ -264,7 +288,7 @@ Copilot insert-mode mappings:
 
 | Key                 | Action                              |
 | ------------------- | ----------------------------------- |
-| `<leader>bd`        | Smart close buffer                  |
+| `<leader>bd`        | Close current buffer                |
 | `<leader>bc`        | Clear current workspace buffers      |
 | `<leader>bzc`       | Clear all buffers and file registry   |
 | `<leader>bn` / `]b` | Next buffer in tab                  |
@@ -292,10 +316,12 @@ Copilot insert-mode mappings:
 | `<C-l>`             | Move to right window                |
 | `<C-j>`             | Move to lower window                |
 | `<C-k>`             | Move to upper window                |
+| `<C-o>`             | Jump to older jumplist position     |
+| `<C-i>`             | Jump to newer jumplist position     |
 
-Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers, tab-local buffer navigation stays scoped to normal file buffers in the current tab, and normal file buffers remember their last cursor position when you switch away and back. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only, so their lifecycle is unchanged and they are not restored after restart.
+Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers. Tab-local buffer navigation stays scoped to normal file buffers in the current tab and follows stable first-added order, so visiting a buffer does not renumber `[b` / `]b` navigation. Cursor positions are session-only and remembered per window and buffer, with a tab-local fallback for a window that has not shown the buffer before; two splits of the same file therefore retain independent cursor positions. Those cursor positions are cleared when a buffer is closed with `<leader>bd`, `<leader>bc`, or `<leader>bzc`. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only: after restart, all restored native tabs belong to one fresh `main` workspace.
 
-Tabs are shown in the tabline, scoped to the active workspace, and the statusline shows the active workspace name with neighbor arrows.
+Bufferline owns the visible tabline. Its buffer list is scoped to the current tab, and its right side shows only tabs from the active workspace, numbered from 1 within that workspace. Bufferline's global native-tab indicators are disabled so tabs from other workspaces remain hidden. The statusline shows the active workspace name with clickable `<<` and `>>` arrows for moving between available workspaces.
 
 ### Editing
 

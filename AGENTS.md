@@ -28,8 +28,10 @@ special buffers are workspace-local when they are shown in a workspace-owned
 tab, but they should not be included in Bufferline or normal file-buffer
 navigation.
 
-Normal file buffers also remember their last cursor position within the current
-session when you switch away and come back.
+Normal file buffers remember cursor positions per window during the current
+session. A tab-local position is used only when a window has not shown that
+buffer before. This keeps two splits of the same file independent while still
+giving replacement or newly created windows a useful restore position.
 
 File preview floats created by `config.tabs.preview_file()` use unlisted
 `nofile` buffers. They may be tracked as workspace-owned special buffers for
@@ -65,14 +67,27 @@ Important details:
 
 - Tabs are assigned stable runtime IDs through the tab-local `lc_tab_id`
   variable.
+- `winlayout()` leaf nodes have the shape `{ "leaf", winid }`; tab persistence
+  must serialize the buffer displayed by that second value. Restore keeps a
+  tracked-buffer fallback for legacy states whose leaf nodes omitted buffers.
+- Bufferline owns Neovim's visible `tabline` after its `VeryLazy` setup. Its
+  built-in native tab indicators must remain disabled because they enumerate
+  every Neovim tab globally. `config.tabline.bufferline_workspace_tabs()`
+  supplies the workspace-scoped, locally numbered tab list through
+  Bufferline's right-side custom area.
 - Bufferline and buffer next/previous navigation are scoped to the current tab's
   tracked normal file buffers.
+- A tab's tracked normal file-buffer order is insertion-ordered. Entering,
+  leaving, or focusing a buffer must not move it within that list; only adding
+  or intentionally removing a buffer changes navigation order.
 - Tab next/previous navigation is scoped to the active workspace, so cycling
   tabs never crosses into another workspace.
 - A buffer may be loaded globally in Neovim, but this config only shows it in
   the current tab's navigation if it is tracked for that tab.
 - Special buffers can be owned by a tab/workspace without appearing in normal
   file-buffer navigation.
+- The statusline renders workspace navigation as three Lualine components. Only
+  the `<<` and `>>` components are clickable; the workspace label is inert.
 
 ### Workspace
 
@@ -92,6 +107,9 @@ the workspace being left. The workspace state lives in:
 
 Each workspace stores its name and last active tab. Creating, switching,
 renaming, listing, and closing workspaces is implemented in `config.tabs`.
+Workspace IDs, names, order, and tab membership must not be written to
+`tab-state.json`. On restart, persisted native tabs are restored into one fresh
+`main` workspace.
 Split windows and special plugin panes remain in the workspace where they were
 opened. Floating windows are snapshotted when leaving a tab and restored when
 returning when their buffers are still valid. Closing a workspace closes its tabs
@@ -126,7 +144,8 @@ Practical implications:
 The config avoids opening the same file in multiple workspace/tab contexts.
 
 When entering a normal file buffer, `config.tabs` checks for an existing matching
-file by normalized path:
+file by normalized path. Multiple windows in the same tab may deliberately show
+the same buffer and must not be rerouted. For other tabs and workspaces:
 
 1. If the file is visible in another tab in the current workspace, switch to
    that tab/window.
@@ -144,6 +163,12 @@ change explicitly alters the workspace model.
 
 - `tabs.lua`: source of truth for runtime workspace, tab, window, and buffer
   behavior.
+- `project_config.lua`: loads the nearest project-owned JSON `nvim.config` and
+  exposes validated project defaults. Version one supports
+  `neotest.args` as an array of strings.
+- `tabline.lua`: renders workspace-local tab labels for Bufferline's custom
+  right-side area. Visible numbering starts at 1 in each workspace, while click
+  targets use the underlying native tab number.
 - `keymaps.lua`: user-facing keymaps for buffer movement, tab commands,
   workspace commands, and smart quit.
 - `plugins/core.lua`: Bufferline configuration and filtering through
@@ -183,6 +208,8 @@ Common keymaps:
 - `<leader>zn`, `<leader>zj`, `<leader>zk`, `<leader>zl`, `<leader>zr`,
   `<leader>zq`: workspace actions
 - `<C-h>`, `<C-j>`, `<C-k>`, `<C-l>`: move between windows
+- `<C-o>` / `<C-i>`: older/newer native jumplist navigation; these mappings
+  suppress cursor restoration and duplicate routing only while the jump runs
 
 Keep README keymap documentation in sync when adding, removing, or changing
 these mappings.
@@ -197,6 +224,9 @@ these mappings.
   `tab_buffers`.
 - Do not make workspaces persistent without documenting the storage format,
   restore order, and interaction with existing tab IDs.
+- Resolve project configuration from the active file or test position, not only
+  from Neovim's startup directory. Keep `nvim.config` data-only; never execute
+  it as Lua or a shell script.
 - When changing keymaps, update both `keymaps.lua` and `README.md`.
 - When changing terminology or the ownership model, update this file first or in
   the same commit.

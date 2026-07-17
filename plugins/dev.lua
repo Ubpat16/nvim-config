@@ -1,5 +1,6 @@
 local python = require("config.python")
 local django = require("config.django")
+local project_config = require("config.project_config")
 
 return {
   {
@@ -165,6 +166,9 @@ return {
           require("neotest-python")({
             dap = { justMyCode = false },
             runner = "pytest",
+            args = function(_, position)
+              return project_config.neotest_args(position and position.path or nil)
+            end,
             python = function()
               return python.project_python(nil, vim.fn.getcwd()) or "python3"
             end,

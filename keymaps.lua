@@ -2,6 +2,7 @@
 local django = require("config.django")
 local logs = require("config.logs")
 local python_config = require("config.python")
+local project_config = require("config.project_config")
 
 -- Git hunk fallback mappings are replaced by Gitsigns when it attaches.
 local function lc_gitsigns_not_attached()
@@ -1135,9 +1136,10 @@ local function lc_new_tab()
   require("config.tabs").new_tab()
 end
 
-local function lc_smart_quit()
+local function lc_close_buffer()
   local current_win = vim.api.nvim_get_current_win()
   local current = vim.api.nvim_get_current_buf()
+  local tabs = require("config.tabs")
   local listed = lc_listed_buffers()
   local current_name = vim.api.nvim_buf_get_name(current)
   local current_buftype = vim.bo[current].buftype
@@ -1152,8 +1154,11 @@ local function lc_smart_quit()
     return
   end
 
-  if #lc_current_tab_normal_windows() > 1 then
-    pcall(vim.cmd, "confirm close")
+  if #listed <= 1 then
+    local ok = pcall(vim.cmd, "confirm bdelete " .. current)
+    if not ok and vim.api.nvim_buf_is_valid(current) then
+      vim.b[current].lc_forget_project_file_on_close = false
+    end
     return
   end
 
@@ -1166,20 +1171,42 @@ local function lc_smart_quit()
     vim.cmd("silent! LastProjectFileForget " .. vim.fn.fnameescape(current_name))
   end
 
-  if #listed > 1 then
-    forget_current_file()
-    vim.cmd("bprevious")
-    if vim.api.nvim_get_current_buf() == current then
-      vim.cmd("bnext")
+  local tab_buffers = tabs.current_tab_buffers()
+  local target = nil
+  for index, bufnr in ipairs(tab_buffers) do
+    if bufnr == current then
+      target = tab_buffers[index + 1] or tab_buffers[index - 1]
+      break
     end
-    local ok = pcall(vim.cmd, "confirm bdelete " .. current)
-    if not ok and vim.api.nvim_buf_is_valid(current) then
+  end
+
+  forget_current_file()
+  local ok = pcall(vim.cmd, "confirm bdelete " .. current)
+  if not ok then
+    if vim.api.nvim_buf_is_valid(current) then
       vim.b[current].lc_forget_project_file_on_close = false
     end
     return
   end
 
-  forget_current_file()
+  if target and vim.api.nvim_buf_is_valid(target) then
+    pcall(vim.cmd, "buffer " .. target)
+    return
+  end
+
+  local next_buffer = listed[2] or listed[1]
+  if next_buffer and vim.api.nvim_buf_is_valid(next_buffer) then
+    pcall(vim.cmd, "buffer " .. next_buffer)
+  end
+end
+
+local function lc_smart_quit()
+  local listed = lc_listed_buffers()
+  if #listed > 1 then
+    lc_close_buffer()
+    return
+  end
+
   vim.cmd("confirm quit")
 end
 
@@ -1188,6 +1215,13 @@ vim.api.nvim_create_user_command("SmartQuit", lc_smart_quit, {
 })
 
 require("config.tabs").setup()
+
+vim.keymap.set("n", "<C-o>", function()
+  require("config.tabs").jump_history(-1, vim.v.count1)
+end, { desc = "Jump to older position" })
+vim.keymap.set("n", "<C-i>", function()
+  require("config.tabs").jump_history(1, vim.v.count1)
+end, { desc = "Jump to newer position" })
 
 vim.keymap.set("c", "<CR>", function()
   if vim.fn.getcmdtype() == ":" then
@@ -1200,7 +1234,7 @@ vim.keymap.set("c", "<CR>", function()
 end, { expr = true, desc = "Smart quit from command line" })
 
 -- Buffers: close, clear, and tab-local navigation.
-vim.keymap.set("n", "<leader>bd", lc_smart_quit, { desc = "Close buffer" })
+vim.keymap.set("n", "<leader>bd", lc_close_buffer, { desc = "Close buffer" })
 vim.keymap.set("n", "<leader>bc", function()
   require("config.tabs").clear_workspace_buffers()
 end, { desc = "Clear current workspace buffers" })
@@ -1679,6 +1713,9 @@ local function lc_pytest_command(target)
   end
 
   command = command .. "pytest --reuse-db "
+  for _, arg in ipairs(project_config.neotest_args(file ~= "" and file or start_path)) do
+    command = command .. vim.fn.shellescape(arg) .. " "
+  end
   if target == "nearest" then
     command = command .. vim.fn.shellescape(lc_nearest_pytest_target(file))
   elseif target == "file" then

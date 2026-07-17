@@ -213,7 +213,7 @@ return {
           local locations = {}
           for _, res in pairs(results or {}) do
             if res and not res.err and res.result then
-              if vim.tbl_islist(res.result) then
+              if vim.islist(res.result) then
                 vim.list_extend(locations, res.result)
               else
                 locations[#locations + 1] = res.result

@@ -2,6 +2,37 @@ local function lc_focus_buffer_window(bufnr)
   require("config.tabs").focus_buffer_window(bufnr)
 end
 
+local function lc_image_backend()
+  local term = (vim.env.TERM or ""):lower()
+  local term_program = (vim.env.TERM_PROGRAM or ""):lower()
+
+  if vim.env.KITTY_WINDOW_ID or term:find("kitty", 1, true) or term_program:find("kitty", 1, true) then
+    return "kitty"
+  end
+
+  if vim.env.WEZTERM_PANE or term_program:find("wezterm", 1, true) then
+    return "kitty"
+  end
+
+  if vim.env.SNACKS_GHOSTTY == "true" or term_program:find("ghostty", 1, true) then
+    return "kitty"
+  end
+
+  if vim.fn.executable("ueberzugpp") == 1 then
+    return "ueberzug"
+  end
+
+  if vim.fn.executable("ueberzug") == 1 then
+    return "ueberzug"
+  end
+
+  if vim.env.SNACKS_SIXEL == "true" or term:find("sixel", 1, true) then
+    return "sixel"
+  end
+
+  return nil
+end
+
 return {
   { "nvim-lua/plenary.nvim", lazy = true },
   { "nvim-tree/nvim-web-devicons", lazy = true },
@@ -36,11 +67,17 @@ return {
         separator_style = "thin",
         show_buffer_close_icons = false,
         show_close_icon = false,
+        show_tab_indicators = false,
         left_mouse_command = lc_focus_buffer_window,
         custom_filter = function(bufnr)
           local tabs = require("config.tabs")
           return tabs.is_normal_file_buffer(bufnr) and tabs.is_in_current_tab(bufnr)
         end,
+        custom_areas = {
+          right = function()
+            return require("config.tabline").bufferline_workspace_tabs()
+          end,
+        },
         offsets = {
           {
             filetype = "NvimTree",
@@ -57,29 +94,36 @@ return {
     "3rd/image.nvim",
     dependencies = { "nvim-lua/plenary.nvim" },
     cond = function()
-      return #vim.api.nvim_list_uis() > 0
+      return #vim.api.nvim_list_uis() > 0 and lc_image_backend() ~= nil
     end,
-    opts = {
-      backend = "kitty",
-      processor = "magick_cli",
-      integrations = {
-        markdown = {
-          enabled = true,
-          clear_in_insert_mode = false,
-          download_remote_images = false,
-          only_render_image_at_cursor = false,
-          filetypes = { "markdown", "vimwiki" },
+    opts = function()
+      local backend = lc_image_backend()
+      if not backend then
+        return nil
+      end
+
+      return {
+        backend = backend,
+        processor = "magick_cli",
+        integrations = {
+          markdown = {
+            enabled = true,
+            clear_in_insert_mode = false,
+            download_remote_images = false,
+            only_render_image_at_cursor = false,
+            filetypes = { "markdown", "vimwiki" },
+          },
+          html = { enabled = true },
+          css = { enabled = true },
         },
-        html = { enabled = true },
-        css = { enabled = true },
-      },
-      max_width = 100,
-      max_height = 20,
-      max_width_window_percentage = 80,
-      max_height_window_percentage = 60,
-      window_overlap_clear_enabled = true,
-      hijack_file_patterns = { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif" },
-    },
+        max_width = 100,
+        max_height = 20,
+        max_width_window_percentage = 80,
+        max_height_window_percentage = 60,
+        window_overlap_clear_enabled = true,
+        hijack_file_patterns = { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif" },
+      }
+    end,
   },
 
   {
