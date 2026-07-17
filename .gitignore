@@ -1,1 +1,4 @@
-*.log
+openai_config.json
+nvim.log
+.DS_Store
+.stfolder/

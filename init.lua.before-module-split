@@ -1,0 +1,1290 @@
+-- Full Neovim config for Django + React/TypeScript
+-- Single-file setup using lazy.nvim
+-- Save as: ~/.config/nvim/init.lua
+
+vim.g.mapleader = " "
+vim.g.maplocalleader = " "
+
+-- nvim-treesitter needs `tree-sitter` on PATH (Homebrew: `brew install tree-sitter-cli`).
+-- GUI-launched Nvim often omits Homebrew, so prepend when the binary is not found.
+if vim.fn.executable("tree-sitter") == 0 and vim.fn.has("macunix") == 1 then
+  for _, hb in ipairs({ "/opt/homebrew/bin", "/usr/local/bin" }) do
+    if vim.uv.fs_stat(hb) and vim.fn.executable(hb .. "/tree-sitter") == 1 then
+      vim.env.PATH = hb .. ":" .. (vim.env.PATH or "")
+      break
+    end
+  end
+end
+
+-- Compatibility shim: older plugins (including older Telescope builds) may still
+-- call vim.treesitter.language.ft_to_lang(), removed in newer Neovim versions.
+if vim.treesitter and vim.treesitter.language and vim.treesitter.language.ft_to_lang == nil then
+  vim.treesitter.language.ft_to_lang = function(filetype)
+    return vim.treesitter.language.get_lang(filetype)
+  end
+end
+
+-- Basic options
+vim.opt.number = true
+vim.opt.relativenumber = true
+vim.opt.mouse = "a"
+vim.opt.clipboard = "unnamedplus"
+vim.opt.breakindent = true
+vim.opt.undofile = true
+vim.opt.ignorecase = true
+vim.opt.smartcase = true
+vim.opt.signcolumn = "yes"
+vim.opt.updatetime = 250
+vim.opt.timeoutlen = 300
+vim.opt.splitright = true
+vim.opt.splitbelow = true
+vim.opt.list = true
+vim.opt.listchars = { tab = "» ", trail = "·", nbsp = "␣" }
+vim.opt.inccommand = "split"
+vim.opt.cursorline = true
+vim.opt.scrolloff = 8
+vim.opt.sidescrolloff = 8
+vim.opt.expandtab = true
+vim.opt.shiftwidth = 2
+vim.opt.tabstop = 2
+vim.opt.softtabstop = 2
+vim.opt.smartindent = true
+vim.opt.termguicolors = true
+vim.opt.autowrite = true
+vim.opt.autowriteall = true
+vim.opt.swapfile = false
+vim.opt.backup = false
+vim.opt.undodir = os.getenv("HOME") .. "/.vim/undodir"
+vim.opt.incsearch = true
+vim.opt.updatetime = 50
+
+-- Python uses 4 spaces
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "python" },
+  callback = function()
+    vim.opt_local.expandtab = true
+    vim.opt_local.shiftwidth = 4
+    vim.opt_local.tabstop = 4
+    vim.opt_local.softtabstop = 4
+  end,
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "json" },
+  callback = function()
+    if vim.fn.executable("jq") == 1 then
+      vim.opt_local.formatprg = "jq"
+    end
+  end,
+})
+
+-- Diagnostics
+vim.diagnostic.config({
+  virtual_text = true,
+  signs = true,
+  underline = true,
+
+  update_in_insert = false,
+  severity_sort = true,
+  float = { border = "rounded", source = "if_many" },
+})
+
+--- Walk upward from `start_dir` and return the first usable venv interpreter, or nil.
+---@param start_dir string
+---@return string|nil
+local function lc_find_venv_python(start_dir)
+  if start_dir == nil or start_dir == "" then
+    start_dir = vim.fn.getcwd()
+  end
+  local cur = vim.fs.normalize(vim.fn.fnamemodify(start_dir, ":p"))
+  local rels = {
+    ".venv/bin/python3",
+    ".venv/bin/python",
+    "venv/bin/python3",
+    "venv/bin/python",
+    "env/bin/python3",
+    "env/bin/python",
+  }
+  for _ = 1, 48 do
+    for _, rel in ipairs(rels) do
+      local cand = vim.fs.joinpath(cur, rel)
+      if vim.fn.executable(cand) == 1 then
+        return vim.fs.normalize(cand)
+      end
+    end
+    local parent = vim.fn.fnamemodify(cur, ":h")
+    if parent == cur then
+      break
+    end
+    cur = parent
+  end
+  return nil
+end
+
+--- If a project venv exists, set VIRTUAL_ENV, refresh Pyright, and re-run dap-python setup.
+---@param bufnr integer
+local function lc_apply_python_venv(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  local ft = vim.bo[bufnr].filetype
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if ft ~= "python" and not (name ~= "" and name:lower():match("%.py$")) then
+    return
+  end
+  local path = vim.api.nvim_buf_get_name(bufnr)
+  local start = (path and path ~= "") and vim.fn.fnamemodify(path, ":p:h") or vim.fn.getcwd()
+  local py = lc_find_venv_python(start)
+  if not py then
+    local root = vim.fs.root(bufnr, { ".git", "pyproject.toml", "manage.py", "setup.py", "Pipfile" })
+    if root then
+      py = lc_find_venv_python(root)
+    end
+  end
+  if not py then
+    return
+  end
+  local venv_root = vim.fn.fnamemodify(py, ":h:h")
+  vim.env.VIRTUAL_ENV = venv_root
+
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+    if client.name == "pyright" then
+      client.settings = client.settings or {}
+      client.settings.python = vim.tbl_deep_extend("force", client.settings.python or {}, { pythonPath = py })
+      client:notify("workspace/didChangeConfiguration", { settings = nil })
+    end
+  end
+end
+
+-- Bootstrap lazy.nvim
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+if not vim.loop.fs_stat(lazypath) then
+  local lazyrepo = "https://github.com/folke/lazy.nvim.git"
+  vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable", lazyrepo, lazypath })
+end
+vim.opt.rtp:prepend(lazypath)
+
+require("lazy").setup({
+  { "nvim-lua/plenary.nvim" },
+  { "nvim-tree/nvim-web-devicons", lazy = true },
+
+  {
+    "3rd/image.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    opts = {
+      backend = "kitty",
+      processor = "magick_rock",
+      integrations = {
+        markdown = {
+          enabled = true,
+          clear_in_insert_mode = false,
+          download_remote_images = false,
+          only_render_image_at_cursor = false,
+          filetypes = { "markdown", "vimwiki" },
+        },
+        html = {
+          enabled = true,
+        },
+        css = {
+          enabled = true,
+        },
+      },
+      max_width = 100,
+      max_height = 20,
+      max_width_window_percentage = 80,
+      max_height_window_percentage = 60,
+      window_overlap_clear_enabled = true,
+      hijack_file_patterns = { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif" },
+    },
+  },
+
+  {
+    "folke/tokyonight.nvim",
+    priority = 1000,
+    config = function()
+      vim.cmd.colorscheme("tokyonight-night")
+    end,
+  },
+
+  {
+    "nvim-lualine/lualine.nvim",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    config = function()
+      require("lualine").setup({
+        options = {
+          theme = "tokyonight",
+          globalstatus = true,
+          section_separators = "",
+          component_separators = "|",
+        },
+      })
+    end,
+  },
+
+  {
+    "lukas-reineke/indent-blankline.nvim",
+    main = "ibl",
+    config = function()
+      require("ibl").setup()
+    end,
+  },
+
+  {
+    "numToStr/Comment.nvim",
+    config = function()
+      require("Comment").setup()
+    end,
+  },
+
+  {
+    "windwp/nvim-autopairs",
+    event = "InsertEnter",
+    config = function()
+      require("nvim-autopairs").setup()
+    end,
+  },
+
+  {
+    "nvim-tree/nvim-tree.lua",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    config = function()
+      require("nvim-tree").setup({
+        hijack_cursor = true,
+        sync_root_with_cwd = true,
+        update_focused_file = {
+          enable = true,
+          update_root = true,
+        },
+        renderer = {
+          root_folder_label = false,
+          indent_markers = { enable = true },
+          icons = {
+            git_placement = "after",
+            glyphs = {
+              folder = {
+                arrow_closed = "▶",
+                arrow_open = "▼",
+              },
+            },
+          },
+        },
+        view = {
+          width = 36,
+        },
+        filters = {
+          dotfiles = false,
+        },
+        git = {
+          enable = true,
+          ignore = false,
+        },
+      })
+    end,
+  },
+
+  {
+  "nvim-telescope/telescope.nvim",
+  dependencies = { "nvim-lua/plenary.nvim" },
+  config = function()
+    local telescope = require("telescope")
+    local actions = require("telescope.actions")
+    local action_state = require("telescope.actions.state")
+
+    telescope.setup({
+      defaults = {
+        layout_config = {
+          horizontal = { prompt_position = "top" },
+        },
+        sorting_strategy = "ascending",
+        winblend = 0,
+
+        mappings = {
+          i = {
+            ["<C-y>"] = function(prompt_bufnr)
+              local entry = action_state.get_selected_entry()
+              local filepath = entry.path or entry.filename
+              vim.fn.setreg("+", filepath)
+              print("Copied: " .. filepath)
+              actions.close(prompt_bufnr)
+            end,
+
+            ["<C-v>"] = actions.select_vertical, -- open in vsplit
+            ["<C-t>"] = actions.select_tab,      -- open in tab
+          },
+
+          n = {
+            ["y"] = function(prompt_bufnr)
+              local entry = action_state.get_selected_entry()
+              local filepath = entry.path or entry.filename
+              vim.fn.setreg("+", filepath)
+              print("Copied: " .. filepath)
+              actions.close(prompt_bufnr)
+            end,
+
+            ["v"] = actions.select_vertical,
+            ["t"] = actions.select_tab,
+          },
+        },
+      },
+
+      pickers = {
+        find_files = {
+          hidden = true,
+        },
+      },
+    })
+  end,
+},
+
+  {
+    "lewis6991/gitsigns.nvim",
+    event = { "BufReadPre", "BufNewFile" },
+    config = function()
+      require("gitsigns").setup({
+        signs = {
+          add = { text = "+" },
+          change = { text = "~" },
+          delete = { text = "_" },
+        },
+        on_attach = function(bufnr)
+          local gs = require("gitsigns")
+
+          local map = function(lhs, rhs, desc)
+            vim.keymap.set("n", lhs, rhs, { buffer = bufnr, desc = desc })
+          end
+
+          local next_hunk = function()
+            if gs.nav_hunk then
+              gs.nav_hunk("next")
+            else
+              gs.next_hunk()
+            end
+          end
+
+          local prev_hunk = function()
+            if gs.nav_hunk then
+              gs.nav_hunk("prev")
+            else
+              gs.prev_hunk()
+            end
+          end
+
+          -- CLI equivalents:
+          -- git restore -p <file>        (interactive rollback)
+          -- git checkout HEAD -- <file>  (reset file)
+          -- git blame <file>             (see line history)
+          map("<F9>", gs.preview_hunk, "Preview git hunk")
+          map("<F10>", gs.reset_hunk, "Undo git hunk (restore from last commit)")
+          map("<F11>", gs.reset_buffer, "Undo entire file (git restore)")
+          map("<F12>", next_hunk, "Next git hunk")
+          map("<S-F12>", prev_hunk, "Prev git hunk")
+          map("<leader>gv", gs.preview_hunk, "Preview git hunk")
+          map("<leader>gx", gs.reset_hunk, "Undo git hunk (restore from last commit)")
+          map("<leader>gX", gs.reset_buffer, "Undo entire file (git restore)")
+          map("<leader>gj", next_hunk, "Next git hunk")
+          map("<leader>gk", prev_hunk, "Prev git hunk")
+        end,
+      })
+    end,
+  },
+
+  {
+    "tpope/vim-fugitive",
+    cmd = { "Git", "G", "Gdiffsplit", "Gvdiffsplit", "GBlame" },
+  },
+
+  {
+    "nvim-treesitter/nvim-treesitter",
+    lazy = false,
+    build = ":TSUpdate",
+    config = function()
+      require("nvim-treesitter").setup()
+      require("nvim-treesitter").install({
+        "bash",
+        "css",
+        "dockerfile",
+        "gitignore",
+        "html",
+        "http",
+        "javascript",
+        "json",
+        "lua",
+        "markdown",
+        "markdown_inline",
+        "python",
+        "regex",
+        "tsx",
+        "typescript",
+        "vim",
+        "vimdoc",
+        "yaml",
+      })
+      local aug = vim.api.nvim_create_augroup("lc_nvim_treesitter_ft", { clear = true })
+      vim.api.nvim_create_autocmd("FileType", {
+        group = aug,
+        pattern = "*",
+        callback = function()
+          if not pcall(vim.treesitter.start) then
+            return
+          end
+          vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        end,
+      })
+    end,
+  },
+
+  {
+    "williamboman/mason.nvim",
+    config = function()
+      require("mason").setup()
+    end,
+  },
+
+  {
+    "williamboman/mason-lspconfig.nvim",
+    dependencies = { "williamboman/mason.nvim" },
+    config = function()
+      require("mason-lspconfig").setup({
+        automatic_enable = false,
+        ensure_installed = {
+          "pyright",
+          "ts_ls",
+          "html",
+          "cssls",
+          "jsonls",
+          "yamlls",
+          "tailwindcss",
+          "dockerls",
+          "bashls",
+        },
+      })
+    end,
+  },
+
+  {
+    "neovim/nvim-lspconfig",
+    dependencies = {
+      "williamboman/mason.nvim",
+      "williamboman/mason-lspconfig.nvim",
+      "hrsh7th/cmp-nvim-lsp",
+    },
+    config = function()
+      local capabilities = require("cmp_nvim_lsp").default_capabilities()
+
+      vim.lsp.config("*", {
+        capabilities = capabilities,
+      })
+
+      vim.api.nvim_create_autocmd("LspAttach", {
+        group = vim.api.nvim_create_augroup("lc_lsp_attach", { clear = true }),
+        callback = function(ev)
+          local bufnr = ev.buf
+          if vim.bo[bufnr].filetype == "python" then
+            vim.schedule(function()
+              lc_apply_python_venv(bufnr)
+            end)
+          end
+
+          local map = function(keys, func, desc)
+            vim.keymap.set("n", keys, func, { buffer = bufnr, desc = desc })
+          end
+
+          map("gd", vim.lsp.buf.definition, "Go to definition")
+          map("gD", vim.lsp.buf.declaration, "Go to declaration")
+          map("gi", vim.lsp.buf.implementation, "Go to implementation")
+          map("gr", vim.lsp.buf.references, "References")
+          map("K", vim.lsp.buf.hover, "Hover")
+          map("<leader>rn", vim.lsp.buf.rename, "Rename")
+          map("<leader>ca", vim.lsp.buf.code_action, "Code action")
+          map("<leader>fd", vim.diagnostic.open_float, "Line diagnostics")
+          map("[d", vim.diagnostic.goto_prev, "Previous diagnostic")
+          map("]d", vim.diagnostic.goto_next, "Next diagnostic")
+        end,
+      })
+
+      vim.lsp.config("pyright", {
+        settings = {
+          pyright = {
+            disableOrganizeImports = true,
+          },
+          python = {
+            analysis = {
+              typeCheckingMode = "basic",
+              autoSearchPaths = true,
+              useLibraryCodeForTypes = true,
+            },
+          },
+        },
+      })
+
+      vim.lsp.enable({
+        "pyright",
+        "ts_ls",
+        "html",
+        "cssls",
+        "jsonls",
+        "yamlls",
+        "tailwindcss",
+        "dockerls",
+        "bashls",
+      })
+
+      local venv_au = vim.api.nvim_create_augroup("lc_python_venv", { clear = true })
+      vim.api.nvim_create_autocmd({ "BufEnter", "FileType" }, {
+        group = venv_au,
+        pattern = { "*.py", "python" },
+        callback = function(args)
+          local b = args.buf
+          vim.schedule(function()
+            lc_apply_python_venv(b)
+          end)
+        end,
+      })
+      vim.api.nvim_create_autocmd("DirChanged", {
+        group = venv_au,
+        callback = function()
+          local b = vim.api.nvim_get_current_buf()
+          vim.schedule(function()
+            lc_apply_python_venv(b)
+          end)
+        end,
+      })
+    end,
+  },
+
+  {
+    "hrsh7th/nvim-cmp",
+    event = "InsertEnter",
+    dependencies = {
+      "hrsh7th/cmp-nvim-lsp",
+      "hrsh7th/cmp-buffer",
+      "hrsh7th/cmp-path",
+      "L3MON4D3/LuaSnip",
+      "saadparwaiz1/cmp_luasnip",
+      "rafamadriz/friendly-snippets",
+    },
+    config = function()
+      local cmp = require("cmp")
+      local luasnip = require("luasnip")
+      require("luasnip.loaders.from_vscode").lazy_load()
+
+      cmp.setup({
+        snippet = {
+          expand = function(args)
+            luasnip.lsp_expand(args.body)
+          end,
+        },
+        mapping = cmp.mapping.preset.insert({
+          ["<C-b>"] = cmp.mapping.scroll_docs(-4),
+          ["<C-f>"] = cmp.mapping.scroll_docs(4),
+          ["<C-Space>"] = cmp.mapping.complete(),
+          ["<CR>"] = cmp.mapping.confirm({ select = true }),
+          ["<Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_next_item()
+            elseif luasnip.expand_or_jumpable() then
+              luasnip.expand_or_jump()
+            else
+              fallback()
+            end
+          end, { "i", "s" }),
+          ["<S-Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_prev_item()
+            elseif luasnip.jumpable(-1) then
+              luasnip.jump(-1)
+            else
+              fallback()
+            end
+          end, { "i", "s" }),
+        }),
+        sources = cmp.config.sources({
+          { name = "nvim_lsp" },
+          { name = "luasnip" },
+          { name = "path" },
+          { name = "buffer" },
+        }),
+      })
+    end,
+  },
+
+  {
+    "stevearc/conform.nvim",
+    config = function()
+      local conform_util = require("conform.util")
+      local python_project_root = function(ctx)
+        local bufnr = ctx.bufnr or ctx.buf or 0
+        return vim.fs.root(bufnr, { "uv.lock", "pyproject.toml", "pytest.ini", ".git" }) or vim.fn.getcwd()
+      end
+
+      require("conform").setup({
+        formatters_by_ft = {
+          python = { "isort", "black" },
+          javascript = { "prettier" },
+          javascriptreact = { "prettier" },
+          typescript = { "prettier" },
+          typescriptreact = { "prettier" },
+          json = { "prettier" },
+          html = { "prettier" },
+          css = { "prettier" },
+          yaml = { "prettier" },
+          markdown = { "prettier" },
+        },
+        formatters = {
+          isort = {
+            command = "uv",
+            args = function(_, ctx)
+              local bufnr = ctx.bufnr or ctx.buf or 0
+              return {
+                "run",
+                "--extra",
+                "dev",
+                "isort",
+                "--stdout",
+                "--line-ending",
+                conform_util.buf_line_ending(bufnr),
+                "--filename",
+                "$FILENAME",
+                "-",
+              }
+            end,
+            cwd = python_project_root,
+          },
+          black = {
+            command = "uv",
+            args = {
+              "run",
+              "--extra",
+              "dev",
+              "black",
+              "--stdin-filename",
+              "$FILENAME",
+              "--quiet",
+              "-",
+            },
+            cwd = python_project_root,
+          },
+        },
+        format_on_save = function(bufnr)
+          local disable_filetypes = { c = true, cpp = true }
+          return {
+            timeout_ms = 1000,
+            lsp_fallback = not disable_filetypes[vim.bo[bufnr].filetype],
+          }
+        end,
+      })
+    end,
+  },
+
+  {
+    "mfussenegger/nvim-lint",
+    config = function()
+      local lint = require("lint")
+      lint.linters_by_ft = {
+        javascript = { "eslint_d" },
+        javascriptreact = { "eslint_d" },
+        typescript = { "eslint_d" },
+        typescriptreact = { "eslint_d" },
+      }
+
+      local lint_augroup = vim.api.nvim_create_augroup("lint", { clear = true })
+      vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
+        group = lint_augroup,
+        callback = function()
+          lint.try_lint()
+        end,
+      })
+    end,
+  },
+
+  {
+    "kylechui/nvim-surround",
+    version = "*",
+    event = "VeryLazy",
+    config = function()
+      require("nvim-surround").setup()
+    end,
+  },
+
+  {
+    "mfussenegger/nvim-dap",
+    event = "VeryLazy",
+    config = function()
+      local dap = require("dap")
+      dap.set_log_level("INFO")
+    end,
+  },
+
+  {
+    "mfussenegger/nvim-dap-python",
+    event = "VeryLazy",
+    dependencies = { "mfussenegger/nvim-dap" },
+    config = function()
+      require("dap-python").setup("python")
+      local dap = require("dap")
+      local root = vim.fn.getcwd()
+      table.insert(dap.configurations.python, {
+        name = "Django: manage.py runserver",
+        type = "python",
+        request = "launch",
+        program = vim.fs.joinpath(root, "manage.py"),
+        args = { "runserver", "--noreload" },
+        django = true,
+        justMyCode = false,
+        console = "integratedTerminal",
+        cwd = root,
+      })
+      table.insert(dap.configurations.python, {
+        name = "Python: attach debugpy (5678)",
+        type = "python",
+        request = "attach",
+        connect = { host = "127.0.0.1", port = 5678 },
+      })
+    end,
+  },
+
+  {
+    "rcarriga/nvim-dap-ui",
+    event = "VeryLazy",
+    dependencies = { "mfussenegger/nvim-dap", "nvim-neotest/nvim-nio" },
+    config = function()
+      local dap = require("dap")
+      local dapui = require("dapui")
+      dapui.setup()
+      dap.listeners.after.event_initialized["dapui_config"] = function()
+        dapui.open()
+      end
+      dap.listeners.before.event_terminated["dapui_config"] = function()
+        dapui.close()
+      end
+      dap.listeners.before.event_exited["dapui_config"] = function()
+        dapui.close()
+      end
+    end,
+  },
+
+  {
+    "nvim-neotest/neotest",
+    event = "VeryLazy",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-treesitter/nvim-treesitter",
+      "nvim-neotest/neotest-python",
+      "nvim-neotest/neotest-jest",
+    },
+    config = function()
+      local function python_for_neotest()
+        local path = vim.api.nvim_buf_get_name(0)
+        local start = (path and path ~= "") and vim.fn.fnamemodify(path, ":p:h") or vim.fn.getcwd()
+        return lc_find_venv_python(start) or "python"
+      end
+
+      require("neotest").setup({
+        adapters = {
+          require("neotest-python")({
+            dap = { justMyCode = false },
+            runner = "pytest",
+            python = python_for_neotest,
+          }),
+          require("neotest-jest")({}),
+        },
+      })
+    end,
+  },
+
+  {
+  "numToStr/Comment.nvim",
+  config = function()
+    require("Comment").setup()
+  end,
+},
+
+  {
+    "Jamsjz/django.nvim",
+    event = "VeryLazy",
+    dependencies = { "nvim-telescope/telescope.nvim" },
+    config = function()
+      require("django").setup({
+        telescope_enabled = true,
+        floaterm_enabled = false,
+      })
+    end,
+  },
+
+  {
+    "mbbill/undotree",
+    cmd = { "UndotreeToggle", "UndotreeShow", "UndotreeHide", "UndotreeFocus" },
+  },
+
+  {
+    "akinsho/toggleterm.nvim",
+    version = "*",
+    config = function()
+      require("toggleterm").setup({
+        size = 16,
+        open_mapping = [[<c-\>]],
+        shade_filetypes = {},
+        direction = "horizontal",
+      })
+    end,
+  },
+  {
+    "rest-nvim/rest.nvim",
+    ft = { "http" },
+    cmd = { "Rest" },
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-treesitter/nvim-treesitter",
+    },
+    config = function()
+      pcall(function()
+        require("nvim-treesitter").install({ "http" })
+      end)
+
+      package.preload["rest-nvim.script.javascript"] = function()
+        local script = {}
+        local logger = require("rest-nvim.logger")
+
+        local node_bridge = [[
+const chunks = [];
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => chunks.push(chunk));
+process.stdin.on("end", () => {
+  const payload = JSON.parse(chunks.join("") || "{}");
+  const globals = (payload.env && payload.env.globals) || {};
+  const locals = (payload.env && payload.env.locals) || {};
+  const response = (payload.env && payload.env.response) || {};
+  const result = { globals: {}, locals: {}, logs: [], response };
+  const stringify = value => {
+    if (typeof value === "string") return value;
+    try { return JSON.stringify(value); } catch (_) { return String(value); }
+  };
+  const readVariable = key => {
+    key = String(key);
+    if (Object.prototype.hasOwnProperty.call(locals, key)) return locals[key];
+    if (Object.prototype.hasOwnProperty.call(globals, key)) return globals[key];
+    if (Object.prototype.hasOwnProperty.call(process.env, key)) return process.env[key];
+    return "";
+  };
+  const console = {
+    log: (...args) => result.logs.push(args.map(stringify).join(" ")),
+    info: (...args) => result.logs.push(args.map(stringify).join(" ")),
+    warn: (...args) => result.logs.push(args.map(stringify).join(" ")),
+    error: (...args) => result.logs.push(args.map(stringify).join(" ")),
+  };
+  const request = {
+    variables: {
+      set: (key, value) => {
+        key = String(key);
+        value = String(value);
+        locals[key] = value;
+        result.locals[key] = value;
+      },
+      get: key => String(readVariable(key)),
+    },
+  };
+  const client = {
+    global: {
+      set: (key, value) => {
+        key = String(key);
+        value = String(value);
+        globals[key] = value;
+        result.globals[key] = value;
+      },
+      get: key => String(readVariable(key)),
+    },
+  };
+
+  try {
+    new Function("client", "request", "response", "console", payload.script || "")(
+      client,
+      request,
+      response,
+      console
+    );
+    result.response = response;
+    process.stdout.write("\n__REST_NVIM_JS_RESULT__" + JSON.stringify(result));
+  } catch (err) {
+    process.stderr.write((err && err.stack) ? err.stack : String(err));
+    process.exitCode = 1;
+  }
+});
+]]
+
+        local function node_command()
+          local configured = vim.g.rest_nvim_javascript_node
+          if type(configured) == "string" and configured ~= "" then
+            return configured
+          end
+          return vim.fn.exepath("node")
+        end
+
+        local function collect_env(ctx, response)
+          return {
+            globals = vim.deepcopy(ctx.vars or {}),
+            locals = vim.deepcopy(ctx.lv or {}),
+            response = response or {},
+          }
+        end
+
+        local function apply_result(ctx, result)
+          for key, value in pairs(result.locals or {}) do
+            ctx:set_local(tostring(key), tostring(value))
+          end
+          for key, value in pairs(result.globals or {}) do
+            vim.env[tostring(key)] = tostring(value)
+          end
+          for _, line in ipairs(result.logs or {}) do
+            vim.notify(line, vim.log.levels.INFO, { title = "rest.nvim JavaScript" })
+          end
+        end
+
+        local function run_node(source, env)
+          local node = node_command()
+          if not node or node == "" then
+            logger.error("failed to run javascript script. `node` is not executable in Neovim's PATH.")
+            return nil
+          end
+
+          local payload = vim.json.encode({
+            script = source,
+            env = env,
+          })
+          local completed = vim.system({ node, "-e", node_bridge }, {
+            text = true,
+            stdin = payload,
+          }):wait()
+
+          if completed.code ~= 0 then
+            logger.error(("javascript script failed: %s"):format(vim.trim(completed.stderr or "")))
+            return nil
+          end
+
+          local stdout = completed.stdout or ""
+          local json = stdout:match("__REST_NVIM_JS_RESULT__(.*)$")
+          if not json then
+            logger.error("javascript script failed: runner returned no result")
+            return nil
+          end
+
+          local ok, decoded = pcall(vim.json.decode, json)
+          if not ok then
+            logger.error(("javascript script failed: invalid runner result: %s"):format(decoded))
+            return nil
+          end
+          return decoded
+        end
+
+        function script.load_pre_req_hook(source, ctx)
+          return function()
+            local result = run_node(source, collect_env(ctx))
+            if result then
+              apply_result(ctx, result)
+            end
+          end
+        end
+
+        function script.load_post_req_hook(source, ctx)
+          return function(response)
+            local result = run_node(source, collect_env(ctx, response))
+            if result then
+              apply_result(ctx, result)
+            end
+          end
+        end
+
+        return script
+      end
+
+      vim.g.rest_nvim = {
+        _log_level = vim.log.levels.DEBUG,
+        result = {
+          show_url = true,
+          show_http_info = true,
+          show_headers = true,
+        },
+        request = {
+          skip_ssl_verification = false,
+        },
+      }
+      require("rest-nvim.logger").set_log_level(vim.log.levels.DEBUG)
+
+      local curl_cli = require("rest-nvim.client.curl.cli")
+      local parse_verbose_line = curl_cli.parser.parse_verbose_line
+      curl_cli.parser.parse_verbose_line = function(line)
+        if vim.trim(line or "") == "" then
+          return { prefix = "*", str = "" }
+        end
+        return parse_verbose_line(line)
+      end
+    end,
+  },
+  {
+    "stevearc/conform.nvim",
+  config = function()
+    local conform_util = require("conform.util")
+    local python_project_root = function(ctx)
+      local bufnr = ctx.bufnr or ctx.buf or 0
+      return vim.fs.root(bufnr, { "uv.lock", "pyproject.toml", "pytest.ini", ".git" }) or vim.fn.getcwd()
+    end
+
+    require("conform").setup({
+      formatters_by_ft = {
+        python = { "isort", "black" },
+        javascript = { "prettier" },
+        typescript = { "prettier" },
+        javascriptreact = { "prettier" },
+        typescriptreact = { "prettier" },
+        json = { "prettier" },
+        html = { "prettier" },
+        css = { "prettier" },
+      },
+      formatters = {
+        isort = {
+          command = "uv",
+          args = function(_, ctx)
+            local bufnr = ctx.bufnr or ctx.buf or 0
+            return {
+              "run",
+              "--extra",
+              "dev",
+              "isort",
+              "--stdout",
+              "--line-ending",
+              conform_util.buf_line_ending(bufnr),
+              "--filename",
+              "$FILENAME",
+              "-",
+            }
+          end,
+          cwd = python_project_root,
+        },
+        black = {
+          command = "uv",
+          args = {
+            "run",
+            "--extra",
+            "dev",
+            "black",
+            "--stdin-filename",
+            "$FILENAME",
+            "--quiet",
+            "-",
+          },
+          cwd = python_project_root,
+        },
+      },
+
+      format_on_save = {
+        timeout_ms = 1000,
+        lsp_fallback = true,
+      },
+    })
+  end,
+},
+}, {
+  checker = { enabled = false },
+})
+
+-- Keymaps
+local function lc_gitsigns_not_attached()
+  vim.notify(
+    "Gitsigns is not attached to this file. Open a file inside a Git repo, e.g. Backend, Web, or Mobile.",
+    vim.log.levels.WARN
+  )
+end
+
+vim.keymap.set("n", "<F9>", lc_gitsigns_not_attached, { desc = "Preview git hunk" })
+vim.keymap.set("n", "<F10>", lc_gitsigns_not_attached, { desc = "Undo git hunk" })
+vim.keymap.set("n", "<F11>", lc_gitsigns_not_attached, { desc = "Undo entire file" })
+vim.keymap.set("n", "<F12>", lc_gitsigns_not_attached, { desc = "Next git hunk" })
+vim.keymap.set("n", "<S-F12>", lc_gitsigns_not_attached, { desc = "Prev git hunk" })
+
+local function lc_gitsigns_call(action, direction)
+  local ok, gs = pcall(require, "gitsigns")
+  if not ok or not vim.b.gitsigns_status_dict then
+    lc_gitsigns_not_attached()
+    return
+  end
+
+  if action == "nav_hunk" and gs.nav_hunk then
+    gs.nav_hunk(direction)
+    return
+  end
+
+  local fn = gs[action]
+  if type(fn) ~= "function" then
+    vim.notify("Gitsigns action is unavailable: " .. action, vim.log.levels.WARN)
+    return
+  end
+  fn()
+end
+
+vim.api.nvim_create_user_command("GitHunkPreview", function()
+  lc_gitsigns_call("preview_hunk")
+end, {})
+vim.api.nvim_create_user_command("GitHunkUndo", function()
+  lc_gitsigns_call("reset_hunk")
+end, {})
+vim.api.nvim_create_user_command("GitFileUndo", function()
+  lc_gitsigns_call("reset_buffer")
+end, {})
+vim.api.nvim_create_user_command("GitHunkNext", function()
+  lc_gitsigns_call("nav_hunk", "next")
+end, {})
+vim.api.nvim_create_user_command("GitHunkPrev", function()
+  lc_gitsigns_call("nav_hunk", "prev")
+end, {})
+
+vim.keymap.set("n", "<leader>e", ":NvimTreeToggle<CR>", { desc = "Explorer" })
+vim.keymap.set("n", "<leader>ff", function()
+  require("telescope.builtin").find_files()
+end, { desc = "Find files", silent = true })
+vim.keymap.set("n", "<leader>fg", function()
+  require("telescope.builtin").live_grep()
+end, { desc = "Live grep", silent = true })
+vim.keymap.set("n", "<leader>fb", function()
+  require("telescope.builtin").buffers()
+end, { desc = "Buffers", silent = true })
+vim.keymap.set("n", "<leader>fh", function()
+  require("telescope.builtin").help_tags()
+end, { desc = "Help tags", silent = true })
+vim.keymap.set("n", "<leader>gs", ":Git<CR>", { desc = "Git status" })
+vim.keymap.set("n", "<leader>gb", ":GBlame<CR>", { desc = "Git blame" })
+vim.keymap.set("n", "<leader>qq", ":qa<CR>", { desc = "Quit all" })
+vim.keymap.set("n", "<leader>w", ":w<CR>", { desc = "Save" })
+vim.keymap.set("n", "<leader>nh", ":nohlsearch<CR>", { desc = "Clear search highlight" })
+vim.keymap.set("n", "<leader>tt", ":ToggleTerm<CR>", { desc = "Terminal" })
+vim.keymap.set("n", "<leader>u", ":UndotreeToggle<CR>", { desc = "Undo history" })
+vim.keymap.set("n", "<leader>pb", function()
+  vim.cmd("Telescope find_files cwd=" .. vim.fn.getcwd() .. "/")
+end, { desc = "Browse project files" })
+
+-- DAP (<leader>D* avoids clash with Django.nvim <leader>d* / manage.py maps)
+vim.keymap.set("n", "<leader>db", function()
+  require("dap").toggle_breakpoint()
+end, { desc = "DAP toggle breakpoint" })
+vim.keymap.set("n", "<leader>Dc", function()
+  require("dap").continue()
+end, { desc = "DAP continue" })
+vim.keymap.set("n", "<leader>Di", function()
+  require("dap").step_into()
+end, { desc = "DAP step into" })
+vim.keymap.set("n", "<leader>Do", function()
+  require("dap").step_over()
+end, { desc = "DAP step over" })
+vim.keymap.set("n", "<leader>DO", function()
+  require("dap").step_out()
+end, { desc = "DAP step out" })
+vim.keymap.set("n", "<leader>Du", function()
+  require("dapui").toggle()
+end, { desc = "DAP UI toggle" })
+
+-- Neotest (VSCode-like runner / summary)
+vim.keymap.set("n", "<F5>", function()
+  require("neotest").run.run()
+end, { desc = "Pytest nearest" })
+vim.keymap.set("n", "<F6>", function()
+  require("neotest").run.run(vim.fn.expand("%"))
+end, { desc = "Pytest this file" })
+vim.keymap.set("n", "<F7>", function()
+  require("neotest").summary.toggle()
+end, { desc = "Pytest summary" })
+vim.keymap.set("n", "<F8>", function()
+  require("neotest").output.open({ enter = true })
+end, { desc = "Pytest output" })
+vim.keymap.set("n", "<leader>Tn", function()
+  require("neotest").run.run()
+end, { desc = "Neotest nearest" })
+vim.keymap.set("n", "<leader>Tf", function()
+  require("neotest").run.run(vim.fn.expand("%"))
+end, { desc = "Neotest this file" })
+vim.keymap.set("n", "<leader>Ts", function()
+  require("neotest").summary.toggle()
+end, { desc = "Neotest summary" })
+vim.keymap.set("n", "<leader>To", function()
+  require("neotest").output.open({ enter = true })
+end, { desc = "Neotest output" })
+
+-- Better window navigation
+vim.keymap.set("n", "<C-h>", "<C-w><C-h>", { desc = "Move to left window" })
+vim.keymap.set("n", "<C-l>", "<C-w><C-l>", { desc = "Move to right window" })
+vim.keymap.set("n", "<C-j>", "<C-w><C-j>", { desc = "Move to lower window" })
+vim.keymap.set("n", "<C-k>", "<C-w><C-k>", { desc = "Move to upper window" })
+
+-- Django helpers
+vim.keymap.set("n", "<leader>dm", ":!python manage.py makemigrations<CR>", { desc = "Django makemigrations" })
+vim.keymap.set("n", "<leader>dM", ":!python manage.py migrate<CR>", { desc = "Django migrate" })
+vim.keymap.set("n", "<leader>dr", ":!python manage.py runserver<CR>", { desc = "Django runserver" })
+vim.keymap.set("n", "<leader>ds", ":!python manage.py shell<CR>", { desc = "Django shell" })
+vim.keymap.set("n", "<leader>dt", ":!python manage.py test<CR>", { desc = "Django test" })
+
+-- React/JS helpers
+vim.keymap.set("n", "<leader>nr", ":!npm run dev<CR>", { desc = "npm run dev" })
+vim.keymap.set("n", "<leader>nt", ":!npm test<CR>", { desc = "npm test" })
+vim.keymap.set("n", "<leader>nb", ":!npm run build<CR>", { desc = "npm run build" })
+
+-- Comment helpers (Comment.nvim exposes gcc/gc and <Plug> maps, not :CommentToggle)
+vim.keymap.set("n", "<leader>cc", "gcc", { remap = true, desc = "Comment toggle line" })
+vim.keymap.set("n", "<leader>c ", "gcc", { remap = true, desc = "Comment toggle line" })
+vim.keymap.set("v", "<leader>cc", "gc", { remap = true, desc = "Comment toggle selection" })
+vim.keymap.set("v", "<leader>c ", "gc", { remap = true, desc = "Comment toggle selection" })
+vim.keymap.set("n", "<C-_>", "gcc", { remap = true, desc = "Comment toggle line" })
+vim.keymap.set("v", "<C-_>", "gc", { remap = true, desc = "Comment toggle selection" })
+
+-- Rest helpers (:Rest needs a subcommand)
+vim.keymap.set("n", "<leader>rr", ":Rest run<CR>", { silent = true, desc = "Rest run request under cursor" })
+vim.keymap.set("n", "<leader>rl", ":Rest last<CR>", { silent = true, desc = "Rest run last request" })
+
+-- Visual select and move lines ---
+vim.keymap.set("v", "J", ":m '>+1<CR>gv=gv")
+vim.keymap.set("v", "K", ":m '<-2<CR>gv=gv")
+
+-- Normal move across files while cursor is in the middle ---
+vim.keymap.set("n", "<C-d>", "<C-d>zz")
+vim.keymap.set("n", "<C-u>", "<C-u>zz")
+
+-- Switch Project --
+vim.keymap.set("n", "<C-f>", "<cmd>silent !tmux neww tmux-sessionizer<CR>")
+
+
+local function lc_autosave_buffer(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  if not vim.bo[bufnr].modified then
+    return
+  end
+  if vim.bo[bufnr].readonly or not vim.bo[bufnr].modifiable then
+    return
+  end
+  if vim.bo[bufnr].buftype ~= "" then
+    return
+  end
+  if vim.api.nvim_buf_get_name(bufnr) == "" then
+    return
+  end
+
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.cmd("silent update")
+  end)
+end
+
+-- Auto-save file buffers when moving away from them
+vim.api.nvim_create_autocmd({ "BufLeave", "BufWinLeave", "FocusLost", "VimLeavePre" }, {
+  group = vim.api.nvim_create_augroup("autosave_on_leave", { clear = true }),
+  callback = function(args)
+    lc_autosave_buffer(args.buf)
+  end,
+})
+
+-- Auto-create missing directories on save
+vim.api.nvim_create_autocmd("BufWritePre", {
+  callback = function(event)
+    local file = event.match
+    local dir = vim.fn.fnamemodify(file, ":p:h")
+    if vim.fn.isdirectory(dir) == 0 then
+      vim.fn.mkdir(dir, "p")
+    end
+  end,
+})
