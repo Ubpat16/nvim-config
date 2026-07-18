@@ -52,7 +52,11 @@ return {
       "nvim-lua/plenary.nvim",
       "nvim-telescope/telescope.nvim",
     },
-    build = "make tiktoken",
+    -- The upstream Makefile requires a Unix shell and `uname`. CopilotChat
+    -- falls back to approximate token counting when the optional native
+    -- tiktoken module is unavailable, so keep the optimized build on Unix
+    -- without making native Windows plugin syncs fail.
+    build = vim.fn.has("win32") == 1 and nil or "make tiktoken",
     config = function()
       require("config.ai").setup_copilot_chat()
     end,

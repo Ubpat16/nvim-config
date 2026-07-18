@@ -12,6 +12,13 @@ if vim.fn.executable("tree-sitter") == 0 and vim.fn.has("macunix") == 1 then
   end
 end
 
+-- tree-sitter-cli defaults to MSVC on Windows. Prefer the portable WinLibs
+-- compiler when it is installed so parser updates do not require cl.exe.
+if vim.fn.has("win32") == 1 and vim.fn.executable("gcc") == 1 then
+  vim.env.CC = vim.env.CC or "gcc"
+  vim.env.CXX = vim.env.CXX or "g++"
+end
+
 -- Compatibility shim: older plugins (including older Telescope builds) may still
 -- call vim.treesitter.language.ft_to_lang(), removed in newer Neovim versions.
 if vim.treesitter and vim.treesitter.language and vim.treesitter.language.ft_to_lang == nil then
