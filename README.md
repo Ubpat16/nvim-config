@@ -115,7 +115,7 @@ Project-specific settings can be stored in a JSON file named `nvim.config`. Neov
 ```json
 {
   "project": {
-    "root": "backend"
+    "root": "."
   },
   "editor": {
     "autosave": true,
@@ -134,8 +134,8 @@ Project-specific settings can be stored in a JSON file named `nvim.config`. Neov
     "interpreter": ".venv/bin/python"
   },
   "django": {
-    "root": "backend",
-    "manage_py": "backend/manage.py",
+    "root": ".",
+    "manage_py": "manage.py",
     "env_file": ".env.test"
   },
   "neotest": {
@@ -361,7 +361,7 @@ Copilot insert-mode mappings:
 
 | Key                 | Action                              |
 | ------------------- | ----------------------------------- |
-| `<leader>bd`        | Close current buffer                |
+| `<leader>bd`        | Close current view or buffer        |
 | `<leader>bc`        | Clear current workspace buffers      |
 | `<leader>bzc`       | Clear all buffers and file registry   |
 | `<leader>bn` / `]b` | Next buffer in tab                  |
@@ -392,7 +392,7 @@ Copilot insert-mode mappings:
 | `<C-o>`             | Jump to older jumplist position     |
 | `<C-i>`             | Jump to newer jumplist position     |
 
-Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers. Tab-local buffer navigation stays scoped to normal file buffers in the current tab and follows stable first-added order, so visiting a buffer does not renumber `[b` / `]b` navigation. Cursor positions are session-only and remembered per window and buffer, with a tab-local fallback for a window that has not shown the buffer before; two splits of the same file therefore retain independent cursor positions. Those cursor positions are cleared when a buffer is closed with `<leader>bd`, `<leader>bc`, or `<leader>bzc`. Tabs remember their layout and tracked file buffers when Neovim exits and starts again. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only: after restart, all restored native tabs belong to one fresh `main` workspace.
+Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers. Tab-local buffer navigation stays scoped to normal file buffers in the current tab and follows stable first-added order, so visiting a buffer does not renumber `[b` / `]b` navigation. Cursor positions are session-only and remembered per window and buffer, with a tab-local fallback for a window that has not shown the buffer before; two splits of the same file therefore retain independent cursor positions. When the same buffer is visible in multiple splits, `<leader>bd` closes only the current split; its final view deletes the buffer. Those cursor positions are cleared when the buffer is deleted with `<leader>bd`, `<leader>bc`, or `<leader>bzc`. Tabs remember layouts containing readable normal files when Neovim exits and starts again; plugin, special, directory, and blank windows are not restored. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only: after restart, all restored native tabs belong to one fresh `main` workspace.
 
 Bufferline owns the visible tabline. Its buffer list is scoped to the current tab, and its right side shows only tabs from the active workspace, numbered from 1 within that workspace. Bufferline's global native-tab indicators are disabled so tabs from other workspaces remain hidden. The statusline shows the active workspace name with clickable `<<` and `>>` arrows for moving between available workspaces.
 

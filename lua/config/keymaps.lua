@@ -1154,6 +1154,10 @@ local function lc_close_buffer()
     return
   end
 
+  if tabs.close_current_buffer_view_if_shared() then
+    return
+  end
+
   if #listed <= 1 then
     local ok = pcall(vim.cmd, "confirm bdelete " .. current)
     if not ok and vim.api.nvim_buf_is_valid(current) then

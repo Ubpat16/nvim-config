@@ -54,6 +54,10 @@ buffer.
 Window movement keymaps move the current buffer between split windows. They do
 not rename, duplicate, or delete buffers.
 
+When the same normal file buffer is displayed in multiple windows in one tab,
+closing the buffer with `<leader>bd` closes only the current window. The shared
+buffer is deleted only from its final view.
+
 ### Tab
 
 A tab is a Neovim tabpage: a layout container for one or more windows. This repo
@@ -71,8 +75,10 @@ Important details:
 - Tabs are assigned stable runtime IDs through the tab-local `lc_tab_id`
   variable.
 - `winlayout()` leaf nodes have the shape `{ "leaf", winid }`; tab persistence
-  must serialize the buffer displayed by that second value. Restore keeps a
-  tracked-buffer fallback for legacy states whose leaf nodes omitted buffers.
+  must serialize the buffer displayed by that second value when it is a readable
+  normal file. Special, plugin, directory, and blank window leaves are not
+  persisted or restored. Restore keeps a tracked-buffer fallback for legacy
+  states whose leaf nodes omitted buffers.
 - Bufferline owns Neovim's visible `tabline` after its `VeryLazy` setup. Its
   built-in native tab indicators must remain disabled because they enumerate
   every Neovim tab globally. `config.tabline.bufferline_workspace_tabs()`

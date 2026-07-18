@@ -333,9 +333,20 @@ local function resolve_relative(config_dir, path)
   return normalize(expanded)
 end
 
+local function resolve_relative_preserving_symlinks(config_dir, path)
+  if type(path) ~= "string" or path == "" then
+    return nil
+  end
+  local expanded = vim.fn.expand(path)
+  if not expanded:match("^/") then
+    expanded = vim.fs.joinpath(config_dir, expanded)
+  end
+  return vim.fs.normalize(vim.fn.fnamemodify(expanded, ":p"))
+end
+
 local function resolve_paths(profile, config_dir)
   profile.project.root = resolve_relative(config_dir, profile.project.root)
-  profile.python.interpreter = resolve_relative(config_dir, profile.python.interpreter)
+  profile.python.interpreter = resolve_relative_preserving_symlinks(config_dir, profile.python.interpreter)
   for _, key in ipairs({ "root", "manage_py", "env_file" }) do
     profile.django[key] = resolve_relative(config_dir, profile.django[key])
   end

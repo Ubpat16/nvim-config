@@ -213,15 +213,11 @@ return {
                 return project_config.get(project_config.start_path()).dap.python.just_my_code
               end,
             },
-            runner = function()
-              return project_config.get(project_config.start_path()).neotest.python.runner
-            end,
+            runner = python.neotest_runner,
             args = function(_, position)
               return project_config.neotest_args(position and position.path or nil)
             end,
-            python = function()
-              return python.project_python(nil, project_config.start_path()) or "python3"
-            end,
+            python = python.neotest_python,
           }),
           jest,
         },

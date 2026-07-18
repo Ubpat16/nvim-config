@@ -3,6 +3,7 @@ local project_config = require("config.project_config")
 
 local cached_global_python = nil
 local cached_project_pythons = {}
+local warned_invalid_project_pythons = {}
 
 local function normalize_executable(path)
   if not path or path == "" then
@@ -186,9 +187,18 @@ function M.project_python(bufnr, start_dir)
   end
 
   local profile = project_config.get(start_dir or name)
-  local configured = normalize_executable(profile.python.interpreter)
+  local configured = normalize_venv_executable(profile.python.interpreter)
   if configured then
     return configured
+  end
+  if profile.python.interpreter and not warned_invalid_project_pythons[profile.python.interpreter] then
+    warned_invalid_project_pythons[profile.python.interpreter] = true
+    vim.notify(
+      "nvim.config: python.interpreter is not executable; using project discovery ("
+        .. profile.python.interpreter
+        .. ")",
+      vim.log.levels.WARN
+    )
   end
 
   local root = project_root(bufnr, start_dir)
@@ -237,6 +247,15 @@ end
 
 function M.global_python_env()
   return M.project_python_env()
+end
+
+function M.neotest_python(root)
+  return M.project_python(nil, root) or "python3"
+end
+
+function M.neotest_runner(python_command)
+  local interpreter = type(python_command) == "table" and python_command[1] or python_command
+  return project_config.get(interpreter).neotest.python.runner
 end
 
 --- Point Python language tooling at the active project's interpreter.

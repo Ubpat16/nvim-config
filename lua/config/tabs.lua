@@ -942,14 +942,6 @@ local function save_buffer_state(bufnr)
     return { type = "blank" }
   end
 
-  local name = normalized_buffer_name(bufnr)
-  if name then
-    return {
-      type = "file",
-      path = name,
-    }
-  end
-
   if vim.bo[bufnr].buftype ~= "" then
     return {
       type = "special",
@@ -958,7 +950,52 @@ local function save_buffer_state(bufnr)
     }
   end
 
+  local name = normalized_buffer_name(bufnr)
+  if M.is_normal_file_buffer(bufnr) and readable_file(name) then
+    return {
+      type = "file",
+      path = name,
+    }
+  end
+
   return { type = "blank" }
+end
+
+local function restorable_layout_node(node)
+  if type(node) ~= "table" then
+    return nil
+  end
+
+  if node.type == "leaf" then
+    local buffer = node.buffer
+    if buffer == nil then
+      return node
+    end
+    if buffer.type == "file" and readable_file(buffer.path) then
+      return node
+    end
+    return nil
+  end
+
+  local children = {}
+  for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
+    local restorable = restorable_layout_node(child)
+    if restorable then
+      children[#children + 1] = restorable
+    end
+  end
+
+  if #children == 0 then
+    return nil
+  end
+  if #children == 1 then
+    return children[1]
+  end
+
+  return {
+    type = node.type,
+    children = children,
+  }
 end
 
 local function load_file_buffer(path)
@@ -987,9 +1024,13 @@ local function capture_layout_node(node, tab_state)
   if node[1] == "leaf" and type(node[2]) == "number" then
     local win = node[2]
     local bufnr = vim.api.nvim_win_get_buf(win)
+    local buffer = save_buffer_state(bufnr)
+    if buffer.type ~= "file" then
+      return nil
+    end
     local leaf = {
       type = "leaf",
-      buffer = save_buffer_state(bufnr),
+      buffer = buffer,
     }
 
     tab_state.leaf_count = tab_state.leaf_count + 1
@@ -1149,7 +1190,7 @@ local function restore_tab_state(tab, state)
     end
   end
 
-  local layout = type(state.layout) == "table" and state.layout or nil
+  local layout = restorable_layout_node(type(state.layout) == "table" and state.layout or nil)
   if layout then
     rebuild_tab_layout(layout, tab_state, focus_state)
   end
@@ -2014,6 +2055,27 @@ function M.clear_all_buffers()
   clear_project_state_for_buffers(buffers)
   active_workspace = workspace_id
   return true
+end
+
+function M.close_current_buffer_view_if_shared()
+  local win = vim.api.nvim_get_current_win()
+  if not M.is_normal_window(win) then
+    return false
+  end
+
+  local bufnr = vim.api.nvim_win_get_buf(win)
+  local shared_views = 0
+  for _, candidate in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if M.is_normal_window(candidate) and vim.api.nvim_win_get_buf(candidate) == bufnr then
+      shared_views = shared_views + 1
+    end
+  end
+
+  if shared_views < 2 then
+    return false
+  end
+
+  return pcall(vim.api.nvim_win_close, win, false)
 end
 
 function M.current_workspace_tabs()

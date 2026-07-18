@@ -45,8 +45,11 @@ local python = require("config.python")
 local django = require("config.django")
 local commands = require("config.project_commands")
 
+local configured_profile = project_config.get(test_file)
 local configured_python = python.project_python(nil, test_file)
-assert(configured_python == normalize(interpreter), "configured interpreter wins discovery: " .. tostring(configured_python))
+assert(configured_python == configured_profile.python.interpreter, "configured interpreter preserves its virtualenv path")
+assert(python.neotest_python(backend) == configured_profile.python.interpreter, "neotest resolves Python from its supplied test root")
+assert(python.neotest_runner({ interpreter }) == "pytest", "neotest runner resolves from its interpreter project")
 
 local context = assert(django.resolve_context(test_file))
 assert(context.root == normalize(backend), "Django uses configured root")
