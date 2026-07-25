@@ -271,7 +271,7 @@ After a successful commit, the config prompts whether to push the current branch
 Use:
 
 ```vim
-<leader>gp
+<leader>gP
 ```
 
 This generates a GitHub PR title and description from commits and diff against `main` or `master`, then opens a preview buffer. Save the preview with `:wq` to create the PR through `gh pr create`.
@@ -317,7 +317,7 @@ Leader is space.
 | `<leader>gs` | Fugitive Git status    |
 | `<leader>gb` | Git blame              |
 | `<leader>gc` | AI-assisted commit     |
-| `<leader>gp` | AI-assisted GitHub PR  |
+| `<leader>gP` | AI-assisted GitHub PR  |
 | `<leader>gl` | Git log graph          |
 | `<leader>gg` | Git all-branches graph |
 | `<F9>`       | Preview Git hunk       |
@@ -501,6 +501,113 @@ For `http` filetype buffers:
 | `<leader>rc` | Show cookies     |
 | `<leader>rg` | Show logs        |
 
+### Graphify
+
+Projects containing `graphify-out/graph.json` get a Graphify integration. Use
+`<leader>gq` or `:Graphify` to open a reusable right-side vertical Graphify
+transcript panel, matching the Codex panel layout. It contains a navigable,
+read-only results field and a distinct multiline input field below it. The
+panel uses `Snacks.win` when available and falls back to managed native splits.
+The integration searches upward from the current buffer and then from Neovim's
+current working directory, using the nearest matching project. It does not
+build or refresh the graph automatically; use `<leader>gu` or
+`:GraphifyUpdate` when you want to refresh the output.
+For a project without Graphify output, use `<leader>gi` or `:GraphifyInit` to
+confirm and run `graphify extract <project-root>`.
+
+Inside the buffer, enter plain text for a query or use:
+
+```text
+:query how does authentication reach the database?
+:path AuthModule -> Database
+:explain RequestRouter
+```
+
+`:GraphifyQuery`, `:GraphifyPath`, and `:GraphifyExplain` run the corresponding
+requests directly. Query requests may include `--dfs` and `--budget N`. Output
+is streamed asynchronously, and `<C-c>` cancels a running request. Press `q`
+or `<Esc>` to hide the panel; its buffer, transcript, history, metadata, and
+running request are preserved. Press `<C-]>` to return focus to the previous
+window without hiding Graphify. Navigate between the two fields with standard
+window movement in Normal mode. Enter submits the query; `<S-CR>` inserts a
+newline in the input field. Source locations such as
+`src/auth.py:42:8` are highlighted; click them or place the cursor on one and
+press `<CR>` to open the file and jump to its line and column.
+
+The two fields are one managed Graphify panel group: closing either child with
+`q`, `<Esc>`, `<leader>bd`, or by closing its window hides both fields together.
+The buffers and running requests remain available when the panel is reopened.
+Raw `:bdelete` or `:bwipeout` on either Graphify buffer is intentionally
+destructive: it stops running work and destroys the complete group, including
+the sibling buffer.
+Previewing a node/path or opening a source location leaves the panel visible;
+hide it explicitly when desired. Creating a new tab or workspace hides the
+current Graphify panel as part of the new layout boundary.
+
+The results field is never editable. Insert/change commands issued while it is
+focused redirect to the input field automatically, so Insert mode never leaves
+the input field. There is no prompt placeholder in the results transcript.
+
+Use `<leader>gp` or `:GraphifyPreview` to open the existing interactive
+`graphify-out/graph.html`. Focused previews are available with:
+
+```vim
+:GraphifyPreviewNode AuthModule
+:GraphifyPreviewPath AuthModule -> Database
+:GraphifyPreviewResult
+```
+
+Inside the Graphify result buffer, `<CR>` previews a node or path result under
+the cursor, `gf` opens a source location, and `K` runs an explain request for
+the node under the cursor. Focused browser URLs use stable node IDs resolved
+from `graph.json`; ambiguous labels open a selection prompt. A missing or
+stale HTML file is reported without rebuilding the graph.
+Graphify `NODE` metadata such as `src=app/support/views.py loc=L59
+community=43` is parsed directly: `gf` opens the source at line 59, and node
+preview resolution uses the community hint when labels are duplicated.
+
+In a file buffer, visually select a variable, symbol, or phrase and press
+`<leader>gq` to send the selection as a Graphify query. This visual-mode
+mapping is separate from the normal-mode `<leader>gq` mapping, which opens the
+Graphify transcript; selected text is passed as one argument, preserving
+spaces, quotes, and punctuation safely.
+
+Graphify must already be installed and available as `graphify` on `PATH`.
+Missing executables and graphs are reported without blocking Neovim.
+
+The default setup is registered from `lua/config/keymaps.lua`. Customize it in
+your configuration after loading the module:
+
+```lua
+require("config.graphify").setup({
+  keymap = "<leader>gq",
+  selection_keymap = "<leader>gq",
+  preview_keymap = "<leader>gp",
+  update_keymap = "<leader>gu",
+  init_keymap = "<leader>gi",
+  allow_override = false,
+  window = {
+    layout = "vertical",
+    side = "right",
+    width = 0.40,
+    provider = "snacks",
+    input_height = 3,
+  },
+  submit_key = "<CR>",
+  newline_key = "<S-CR>",
+  input_placeholder = "Ask Graphify: query text, :path source -> target, or :explain node",
+  unfocus_key = "<C-]>",
+  preview = {
+    mode = "browser",
+    -- For a custom browser: mode = "command", command = { "firefox", "--new-window" }
+    -- For a Neovim backend: mode = "backend", backend = function(uri) ... end
+  },
+})
+```
+
+The command names can be customized through the `commands` table. Existing
+keymaps and user commands are preserved unless `allow_override = true`.
+
 ## Commands
 
 | Command                   | Description                               |
@@ -523,6 +630,16 @@ For `http` filetype buffers:
 | `:WorkspaceList`          | List and switch workspaces                |
 | `:WorkspaceRename <name>` | Rename current workspace                  |
 | `:WorkspaceClose`         | Close current workspace                   |
+| `:Graphify`               | Open the Graphify transcript              |
+| `:GraphifyQuery <text>`   | Run a Graphify query                      |
+| `:GraphifyPath <a> -> <b>` | Find a Graphify path                    |
+| `:GraphifyExplain <node>` | Explain a Graphify node                   |
+| `:GraphifyUpdate`         | Re-extract and update Graphify output     |
+| `:GraphifyInit`           | Initialize Graphify for a project        |
+| `:GraphifyPreview`        | Open the full interactive graph           |
+| `:GraphifyPreviewNode <node>` | Focus a graph node                    |
+| `:GraphifyPreviewPath <a> -> <b>` | Focus a shortest path          |
+| `:GraphifyPreviewResult`  | Preview the latest actionable result      |
 
 ## Secrets and Files Not to Commit
 

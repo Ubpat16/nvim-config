@@ -719,6 +719,10 @@ end
 
 function M.new_tab()
   ensure_workspace()
+  local ok_graphify, graphify = pcall(require, "config.graphify")
+  if ok_graphify and graphify.hide_for_tab_change then
+    graphify.hide_for_tab_change()
+  end
 
   local workspace_id = current_workspace()
   local previous_tab = current_tab()
@@ -1633,6 +1637,10 @@ end
 
 function M.workspace_new(name)
   ensure_workspace()
+  local ok_graphify, graphify = pcall(require, "config.graphify")
+  if ok_graphify and graphify.hide_for_tab_change then
+    graphify.hide_for_tab_change()
+  end
   local previous_tab = current_tab()
   record_display_windows(previous_tab)
   snapshot_floating_windows(previous_tab)

@@ -1117,6 +1117,7 @@ end
 local function lc_move_window_to_new_tab()
   local source_tab = vim.api.nvim_get_current_tabpage()
   local source_win = vim.api.nvim_get_current_win()
+  require("config.graphify").hide_for_tab_change()
 
   vim.cmd("tab split")
   local target_tab = vim.api.nvim_get_current_tabpage()
@@ -1139,6 +1140,12 @@ end
 local function lc_close_buffer()
   local current_win = vim.api.nvim_get_current_win()
   local current = vim.api.nvim_get_current_buf()
+  -- Graphify owns transcript and input as one panel group. Normal buffer close
+  -- must hide that group before generic window/buffer routing runs.
+  local graphify = require("config.graphify")
+  if graphify.close_group_for_buffer(current) then
+    return
+  end
   local tabs = require("config.tabs")
   local listed = lc_listed_buffers()
   local current_name = vim.api.nvim_buf_get_name(current)
@@ -1219,6 +1226,19 @@ vim.api.nvim_create_user_command("SmartQuit", lc_smart_quit, {
 })
 
 require("config.tabs").setup()
+require("config.graphify").setup({
+  selection_keymap = "<leader>gq",
+  window = {
+    layout = "vertical",
+    side = "right",
+    width = 0.40,
+    provider = "snacks",
+    input_height = 3,
+  },
+  submit_key = "<CR>",
+  newline_key = "<S-CR>",
+  unfocus_key = "<C-]>",
+})
 
 vim.keymap.set("n", "<C-o>", function()
   require("config.tabs").jump_history(-1, vim.v.count1)
@@ -1329,8 +1349,9 @@ vim.keymap.set("n", "<leader>gc", lc_open_git_commit_float, { desc = "Git add al
 vim.keymap.set("n", "<leader>gl", ":Git log --graph --oneline<CR>", { desc = "Git log graph" })
 vim.keymap.set("n", "<leader>gg", ":Git log --all --graph --decorate --oneline<CR>", { desc = "Git all branches graph" })
 
--- Create GitHub PR with OpenAI-generated description (preview/edit)
-vim.keymap.set("n", "<leader>gp", function()
+-- Create GitHub PR with OpenAI-generated description (preview/edit).
+-- <leader>gp is reserved for Graphify's interactive graph preview.
+vim.keymap.set("n", "<leader>gP", function()
   local file = vim.fn.expand("%:p")
   local start_path = file ~= "" and vim.fn.fnamemodify(file, ":h") or vim.fn.getcwd()
   
@@ -1830,3 +1851,27 @@ end
 -- Quickfix.
 vim.keymap.set("n", "]q", safe_cmd("cnext"), { desc = "Next quickfix item" })
 vim.keymap.set("n", "[q", safe_cmd("cprevious"), { desc = "Previous quickfix item" })
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "qf",
+  callback = function(event)
+    vim.keymap.set("n", "dd", function()
+      local items = vim.fn.getqflist()
+      local index = vim.api.nvim_win_get_cursor(0)[1]
+
+      if index < 1 or index > #items then
+        return
+      end
+
+      table.remove(items, index)
+      vim.fn.setqflist({}, "r", { items = items })
+
+      if #items > 0 then
+        vim.api.nvim_win_set_cursor(0, { math.min(index, #items), 0 })
+      end
+    end, {
+      buffer = event.buf,
+      desc = "Remove quickfix item",
+      silent = true,
+    })
+  end,
+})

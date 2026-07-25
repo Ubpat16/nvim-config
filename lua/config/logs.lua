@@ -55,6 +55,14 @@ local function ensure_file(path)
   end
 end
 
+local function run_outside_fast_event(callback)
+  if vim.in_fast_event and vim.in_fast_event() then
+    vim.schedule(callback)
+  else
+    callback()
+  end
+end
+
 local function source_paths(name)
   local source = sources[name]
   if not source then
@@ -84,16 +92,18 @@ function M.write(source_name, level, message, context)
     return
   end
 
-  ensure_file(path)
+  run_outside_fast_event(function()
+    ensure_file(path)
 
-  local entry = {
-    time = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-    level = level,
-    message = message,
-    context = context or vim.empty_dict(),
-  }
+    local entry = {
+      time = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+      level = level,
+      message = message,
+      context = context or vim.empty_dict(),
+    }
 
-  vim.fn.writefile({ vim.json.encode(entry) }, path, "a")
+    vim.fn.writefile({ vim.json.encode(entry) }, path, "a")
+  end)
 end
 
 local function source_complete()

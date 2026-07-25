@@ -177,6 +177,9 @@ change explicitly alters the workspace model.
   Django, tests, formatting, linting, LSP, DAP, and Python run helpers.
 - `project_commands.lua`: builds shell-safe commands from the active project
   profile for direct pytest and Python execution.
+- `graphify.lua`: detects Graphify projects, builds argument-list CLI requests,
+  manages the asynchronous Graphify transcript and its persistent right-side
+  panel, and opens source locations.
 - `tabline.lua`: renders workspace-local tab labels for Bufferline's custom
   right-side area. Visible numbering starts at 1 in each workspace, while click
   targets use the underlying native tab number.
@@ -192,6 +195,19 @@ Log commands:
 
 - `:AILogs`
 - `:PluginLogs [source]`
+
+Graphify commands:
+
+- `:Graphify`
+- `:GraphifyQuery [question]`
+- `:GraphifyPath <source> -> <target>`
+- `:GraphifyExplain <node>`
+- `:GraphifyUpdate`
+- `:GraphifyInit`
+- `:GraphifyPreview`
+- `:GraphifyPreviewNode <node>`
+- `:GraphifyPreviewPath <source> -> <target>`
+- `:GraphifyPreviewResult`
 
 Workspace commands:
 
@@ -209,6 +225,45 @@ Common keymaps:
 - `<leader>bc`: clear the active workspace's normal file buffers
 - `<leader>bzc`: clear all buffers and file registry entries
 - `<leader>fp`: pick a file to preview in a floating window
+- `<leader>gq`: smart-toggle the Graphify transcript panel for the nearest
+  Graphify project
+- visual `<leader>gq`: send the selected text to Graphify as a query
+- `<leader>gp`: open the Graphify HTML preview
+- `<leader>gu`: update Graphify output for the nearest project
+- `<leader>gi`: initialize Graphify for a project without graph output
+- `<leader>gP`: open the AI-assisted GitHub PR preview
+
+Graphify owns one unlisted `nofile` transcript buffer and one unlisted `nofile`
+multiline input buffer per detected project. The visible panel has a managed
+right-side transcript window and a bottom input window. The window uses
+`Snacks.win` when available and managed native splits otherwise. The transcript
+is permanently read-only and navigable in Normal mode; the input buffer is the
+only editable buffer. `q` and `<Esc>` hide both windows without wiping either
+buffer or cancelling a request; `<C-c>` cancels the request; and `<C-]>`
+returns focus to the previous window without hiding the panel. `<CR>` submits
+the input and `<S-CR>` inserts a newline. Insert/change commands from the
+transcript redirect to the input field.
+Preview and source-location actions do not hide the group. New tab and new
+workspace creation call Graphify's tab-change hook to hide the current group
+as part of establishing the new layout.
+
+These two child windows and buffers are owned by one Graphify panel group:
+
+```text
+workspace
+  tabpage
+    Graphify panel group
+      transcript window → transcript buffer
+      input window → input buffer
+```
+
+`config.graphify.is_graphify_buffer()` recognizes either child and
+`close_group_for_buffer()` hides the complete group. The generic `<leader>bd`
+mapping checks this ownership before normal buffer-close routing, so it cannot
+leave one child visible. Raw `:bdelete`/`:bwipeout` is explicit destruction:
+it cancels running work, closes both windows, wipes both buffers, and removes
+the group's history and metadata. Reopening creates a fresh group after such
+destruction, while ordinary hide/show restores the existing buffers and state.
 - `<leader>bh`, `<leader>bj`, `<leader>bk`, `<leader>bl`: move buffer to a
   neighboring split
 - `<leader>bsh`, `<leader>bsj`, `<leader>bsk`, `<leader>bsl`: move buffer to a
