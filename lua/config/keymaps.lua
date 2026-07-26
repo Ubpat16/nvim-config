@@ -1489,7 +1489,7 @@ vim.keymap.set("n", "<leader>pb", function()
 end, { desc = "Browse project files" })
 
 -- DAP (<leader>D* avoids clash with Django.nvim <leader>d* / manage.py maps)
-vim.keymap.set("n", "<leader>db", function()
+vim.keymap.set("n", "<leader>Db", function()
   require("dap").toggle_breakpoint()
 end, { desc = "DAP toggle breakpoint" })
 vim.keymap.set("n", "<leader>Dc", function()

@@ -306,6 +306,7 @@ Leader is space.
 | `<leader>fm`                        | Marks                           |
 | `<leader>fh`                        | Help tags                       |
 | `<leader>pb`                        | Browse project files            |
+| `<leader>db`                        | Toggle database client          |
 | `s`                                 | Flash jump                      |
 | `S`                                 | Flash Treesitter jump           |
 | `r` in operator-pending mode        | Remote Flash                    |
@@ -467,7 +468,7 @@ Python formatting prefers Ruff, Black, and isort installed in the project virtua
 | `<leader>pt` | Run nearest pytest via `uv`      |
 | `<leader>pf` | Run current pytest file via `uv` |
 | `<leader>pa` | Run pytest suite via `uv`        |
-| `<leader>db` | DAP toggle breakpoint            |
+| `<leader>Db` | DAP toggle breakpoint            |
 | `<leader>dn` | DAP next line                    |
 | `<leader>di` | DAP step into                    |
 | `<leader>do` | DAP step out                     |
