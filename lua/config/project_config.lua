@@ -37,6 +37,7 @@ local DEFAULTS = {
   linting = {
     enabled = true,
     by_filetype = {
+      python = { "ruff" },
       javascript = { "eslint_d" },
       javascriptreact = { "eslint_d" },
       typescript = { "eslint_d" },

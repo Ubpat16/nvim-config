@@ -1,7 +1,8 @@
 local root = vim.fn.tempname()
 local backend = vim.fs.joinpath(root, "backend")
 local app = vim.fs.joinpath(backend, "app")
-local venv_bin = vim.fs.joinpath(root, ".venv", "bin")
+local is_windows = vim.fn.has("win32") == 1
+local venv_bin = vim.fs.joinpath(root, ".venv", is_windows and "Scripts" or "bin")
 vim.fn.mkdir(app, "p")
 vim.fn.mkdir(venv_bin, "p")
 vim.fn.mkdir(vim.fs.joinpath(root, ".git"), "p")
@@ -14,9 +15,14 @@ local function normalize(path)
   return vim.fs.normalize(vim.uv.fs_realpath(path) or path)
 end
 
-local interpreter = vim.fs.joinpath(venv_bin, "python")
-write(interpreter, { "#!/bin/sh", "exit 0" })
-vim.fn.setfperm(interpreter, "rwxr-xr-x")
+local interpreter = vim.fs.joinpath(venv_bin, is_windows and "python.exe" or "python")
+if is_windows then
+  local source_python = assert(vim.fn.exepath("python") ~= "" and vim.fn.exepath("python") or nil, "python is required for this test")
+  assert(vim.uv.fs_copyfile(source_python, interpreter), "creates Windows virtualenv interpreter fixture")
+else
+  write(interpreter, { "#!/bin/sh", "exit 0" })
+  vim.fn.setfperm(interpreter, "rwxr-xr-x")
+end
 local manage_py = vim.fs.joinpath(app, "manage.py")
 local test_file = vim.fs.joinpath(app, "test_profile.py")
 local run_file = vim.fs.joinpath(app, "script.py")
@@ -28,7 +34,7 @@ write(vim.fs.joinpath(root, ".env.run"), "MODE=dev")
 write(vim.fs.joinpath(root, "nvim.config"), vim.json.encode({
   project = { root = "backend" },
   editor = { autosave = false, options = { shiftwidth = 6, expandtab = false } },
-  python = { interpreter = ".venv/bin/python" },
+  python = { interpreter = is_windows and ".venv/Scripts/python.exe" or ".venv/bin/python" },
   django = { root = "backend", manage_py = "backend/app/manage.py", env_file = ".env.test" },
   neotest = { args = { "--ds=settings.tests", "value with spaces" } },
   pytest = { direct_args = { "--reuse-db", "-q" }, env_file = ".env.test" },

@@ -2,6 +2,7 @@ local M = {}
 
 local conform_util = require("conform.util")
 local project_config = require("config.project_config")
+local python = require("config.python")
 
 local function python_project_root(ctx)
   local bufnr = ctx.bufnr or ctx.buf or 0
@@ -10,6 +11,21 @@ local function python_project_root(ctx)
     return configured
   end
   return vim.fs.root(bufnr, { "uv.lock", "pyproject.toml", "pytest.ini", ".git" }) or vim.fn.getcwd()
+end
+
+local function python_tool(tool, ctx)
+  local bufnr = ctx.bufnr or ctx.buf or 0
+  local uv = vim.fn.exepath("uv")
+  return python.project_tool(tool, bufnr) or (uv ~= "" and uv or "uv")
+end
+
+local function uses_uv(tool, ctx)
+  local name = vim.fs.basename(python_tool(tool, ctx)):lower()
+  return name == "uv" or name == "uv.exe"
+end
+
+local function python_formatter_env(_, ctx)
+  return python.project_python_env(ctx.bufnr or ctx.buf or 0)
 end
 
 function M.options_for_buffer(bufnr)
@@ -48,28 +64,27 @@ function M.setup()
     },
     formatters = {
       ruff_fix_imports = {
-        command = "ruff",
+        command = function(_, ctx)
+          return python_tool("ruff", ctx)
+        end,
         stdin = true,
-        args = {
-          "check",
-          "--fix-only",
-          "--select",
-          "F401,I",
-          "--stdin-filename",
-          "$FILENAME",
-          "-",
-        },
+        args = function(_, ctx)
+          local args = { "check", "--fix-only", "--select", "F401,I", "--stdin-filename", "$FILENAME", "-" }
+          if uses_uv("ruff", ctx) then
+            args = vim.list_extend({ "tool", "run", "ruff" }, args)
+          end
+          return args
+        end,
+        env = python_formatter_env,
         cwd = python_project_root,
       },
       isort = {
-        command = "uv",
+        command = function(_, ctx)
+          return python_tool("isort", ctx)
+        end,
         args = function(_, ctx)
           local bufnr = ctx.bufnr or ctx.buf or 0
-          return {
-            "run",
-            "--group",
-            "dev",
-            "isort",
+          local args = {
             "--stdout",
             "--line-ending",
             conform_util.buf_line_ending(bufnr),
@@ -77,22 +92,27 @@ function M.setup()
             "$FILENAME",
             "-",
           }
+          if uses_uv("isort", ctx) then
+            args = vim.list_extend({ "tool", "run", "isort" }, args)
+          end
+          return args
         end,
         cwd = python_project_root,
+        env = python_formatter_env,
       },
       black = {
-        command = "uv",
-        args = {
-          "run",
-          "--group",
-          "dev",
-          "black",
-          "--stdin-filename",
-          "$FILENAME",
-          "--quiet",
-          "-",
-        },
+        command = function(_, ctx)
+          return python_tool("black", ctx)
+        end,
+        args = function(_, ctx)
+          local args = { "--stdin-filename", "$FILENAME", "--quiet", "-" }
+          if uses_uv("black", ctx) then
+            args = vim.list_extend({ "tool", "run", "black" }, args)
+          end
+          return args
+        end,
         cwd = python_project_root,
+        env = python_formatter_env,
       },
     },
     format_on_save = function(bufnr)

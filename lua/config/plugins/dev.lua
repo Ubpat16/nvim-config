@@ -18,6 +18,23 @@ return {
     config = function()
       local lint = require("lint")
       lint.linters_by_ft = {}
+      local base_ruff = vim.deepcopy(lint.linters.ruff)
+
+      local function configure_ruff(bufnr)
+        local configured = vim.deepcopy(base_ruff)
+        local command = python.project_tool("ruff", bufnr)
+        if not command then
+          command = vim.fn.exepath("uv")
+          if command ~= "" then
+            configured.args = vim.list_extend({ "tool", "run", "ruff" }, configured.args)
+          else
+            command = "ruff"
+          end
+        end
+        configured.cmd = command
+        configured.env = python.project_python_env(bufnr)
+        lint.linters.ruff = configured
+      end
 
       local lint_augroup = vim.api.nvim_create_augroup("lint", { clear = true })
       vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
@@ -31,6 +48,9 @@ return {
           configured = vim.tbl_filter(function(name)
             return name ~= "eslint_d" or vim.fn.executable("eslint_d") == 1
           end, configured)
+          if vim.tbl_contains(configured, "ruff") then
+            configure_ruff(event.buf)
+          end
           if #configured > 0 then
             lint.try_lint(configured)
           end

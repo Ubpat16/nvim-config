@@ -5,6 +5,9 @@ local cached_global_python = nil
 local cached_project_pythons = {}
 local warned_invalid_project_pythons = {}
 
+local is_windows = vim.fn.has("win32") == 1
+local path_separator = is_windows and ";" or ":"
+
 local function normalize_executable(path)
   if not path or path == "" then
     return nil
@@ -105,13 +108,13 @@ local function find_venv_python(start_dir)
 
   local cur = vim.fs.normalize(vim.fn.fnamemodify(start_dir, ":p"))
   local rels = {
-    ".venv/bin/python3",
-    ".venv/bin/python",
-    "venv/bin/python3",
-    "venv/bin/python",
-    "env/bin/python3",
-    "env/bin/python",
+    is_windows and ".venv/Scripts/python.exe" or ".venv/bin/python3",
+    is_windows and "venv/Scripts/python.exe" or ".venv/bin/python",
+    is_windows and "env/Scripts/python.exe" or "venv/bin/python3",
   }
+  if not is_windows then
+    vim.list_extend(rels, { "venv/bin/python", "env/bin/python3", "env/bin/python" })
+  end
 
   for _ = 1, 48 do
     for _, rel in ipairs(rels) do
@@ -232,7 +235,7 @@ function M.project_python_env(bufnr, start_dir)
   local venv_root = vim.fn.fnamemodify(py, ":h:h")
   local path = vim.env.PATH or ""
   if path ~= "" then
-    path = bin_dir .. ":" .. path
+    path = bin_dir .. path_separator .. path
   else
     path = bin_dir
   end
@@ -243,6 +246,23 @@ function M.project_python_env(bufnr, start_dir)
     PYTHON3 = py,
     VIRTUAL_ENV = venv_root,
   }
+end
+
+--- Resolve a Python project tool, preferring the executable installed in its virtualenv.
+---@param tool string
+---@param bufnr integer|nil
+---@param start_dir string|nil
+---@return string|nil
+function M.project_tool(tool, bufnr, start_dir)
+  local py = M.project_python(bufnr, start_dir)
+  if py then
+    local candidate = vim.fs.joinpath(vim.fn.fnamemodify(py, ":h"), tool .. (is_windows and ".exe" or ""))
+    if vim.fn.executable(candidate) == 1 then
+      return vim.fs.normalize(candidate)
+    end
+  end
+  local executable = vim.fn.exepath(tool)
+  return executable ~= "" and vim.fs.normalize(executable) or nil
 end
 
 function M.global_python_env()

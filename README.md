@@ -91,11 +91,13 @@ That resolved interpreter is assigned to:
 
 - Neovim Python provider through `vim.g.python3_host_prog`
 
-Python project tooling resolves the nearest `.venv`, `venv`, or `env` interpreter from the current file or project root, falling back to the global host interpreter only when no project environment exists. The project interpreter is used for:
+Python project tooling resolves the nearest `.venv`, `venv`, or `env` interpreter (`bin/python` on Unix, `Scripts/python.exe` on Windows) from the current file or project root, falling back to the global host interpreter only when no project environment exists. The project interpreter is used for:
 
 - Pyright's `pythonPath`
 - `nvim-dap-python`
 - `neotest-python`
+- Python formatter child-process environments
+- Ruff lint subprocesses
 - Git/PR child commands launched by this config, with the project Python directory first on `PATH`
 
 This keeps Neovim stable while giving Pyright and test/debug integrations the packages and stubs installed in the active project.
@@ -430,7 +432,7 @@ Bufferline owns the visible tabline. Its buffer list is scoped to the current ta
 | `:Format`      | Format current buffer           |
 | `:FormatWrite` | Format and write current buffer |
 
-Python formatting is handled through `uvx ruff` and `uvx black` from `formatters.lua`.
+Python formatting prefers Ruff, Black, and isort installed in the project virtualenv, then the tool on Neovim's PATH (including Mason), and falls back to `uv tool run <tool>`. Each formatter receives the project virtualenv environment.
 
 ### Testing and Debugging
 
