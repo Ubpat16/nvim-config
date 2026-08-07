@@ -44,10 +44,14 @@ function M.setup()
       },
     },
     extensions = {
+      live_grep_args = {
+        auto_quoting = false,
+      },
       ["ui-select"] = require("telescope.themes").get_dropdown({}),
     },
   })
 
+  telescope.load_extension("live_grep_args")
   pcall(telescope.load_extension, "ui-select")
 end
 

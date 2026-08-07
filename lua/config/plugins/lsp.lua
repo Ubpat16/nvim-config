@@ -1,5 +1,6 @@
 local python = require("config.python")
 local project_config = require("config.project_config")
+local deferred = require("config.deferred")
 
 return {
   {
@@ -15,7 +16,8 @@ return {
     opts = {
       automatic_enable = false,
       ensure_installed = {
-        "pyright",
+        "basedpyright",
+        "gopls",
         "ts_ls",
         "html",
         "cssls",
@@ -36,13 +38,17 @@ return {
       ensure_installed = {
         "prettier",
         "ruff",
+        "gofumpt",
+        "golangci-lint",
+        "sqlfluff",
+        "delve",
       },
     },
   },
 
   {
     "neovim/nvim-lspconfig",
-    event = { "BufReadPre", "BufNewFile" },
+    event = { "BufReadPost", "BufNewFile" },
     dependencies = {
       "williamboman/mason.nvim",
       "williamboman/mason-lspconfig.nvim",
@@ -240,17 +246,58 @@ return {
         end)
       end
 
+      local function add_missing_import()
+        vim.lsp.buf.code_action({
+          apply = true,
+          filter = function(action, client_id)
+            local client = vim.lsp.get_client_by_id(client_id)
+            local kind = type(action) == "table" and action.kind or nil
+            local title = type(action) == "table" and action.title or ""
+
+            if client and (client.name == "basedpyright" or client.name == "pyright") then
+              if type(title) ~= "string" then
+                return false
+              end
+
+              local normalized_title = title:lower()
+              local is_import_statement = normalized_title:match("^from%s+")
+                or normalized_title:match("^import%s+")
+              local is_import_action = normalized_title:find("import", 1, true) ~= nil
+                and (
+                  normalized_title:find("add", 1, true) ~= nil
+                  or normalized_title:find("search", 1, true) ~= nil
+                  or is_import_statement ~= nil
+                )
+              return is_import_action
+            end
+
+            if client and client.name == "ts_ls" then
+              return kind == "source.addMissingImports.ts"
+            end
+
+            return false
+          end,
+        })
+      end
+
       vim.lsp.config("*", {
         capabilities = capabilities,
       })
 
-      vim.api.nvim_create_autocmd("LspAttach", {
+        vim.api.nvim_create_autocmd("LspAttach", {
         group = vim.api.nvim_create_augroup("lc_lsp_attach", { clear = true }),
         callback = function(event)
           local bufnr = event.buf
-          project_config.apply_lsp_settings(bufnr)
+          deferred.defer(bufnr, "lsp-project-settings", 25, function()
+            if vim.api.nvim_buf_is_valid(bufnr) then
+              project_config.apply_lsp_settings(bufnr)
+            end
+          end)
           if vim.bo[bufnr].filetype == "python" then
-            vim.schedule(function()
+            deferred.defer(bufnr, "python-project", 25, function()
+              if not vim.api.nvim_buf_is_valid(bufnr) then
+                return
+              end
               python.apply_project_python(bufnr)
             end)
           end
@@ -272,38 +319,54 @@ return {
           map("K", vim.lsp.buf.hover, "Hover")
           map("<leader>rn", vim.lsp.buf.rename, "Rename")
           map("<leader>ca", vim.lsp.buf.code_action, "Code action")
+          map("<leader>ai", add_missing_import, "Add missing import")
           map("<leader>fd", vim.diagnostic.open_float, "Line diagnostics")
           map("[d", vim.diagnostic.goto_prev, "Previous diagnostic")
           map("]d", vim.diagnostic.goto_next, "Next diagnostic")
         end,
       })
 
-      vim.lsp.config("pyright", {
+      vim.lsp.config("basedpyright", {
         settings = {
-          pyright = {
+          basedpyright = {
             disableOrganizeImports = true,
-          },
-          python = {
             analysis = {
               typeCheckingMode = "basic",
               autoSearchPaths = true,
+              autoImportCompletions = true,
               useLibraryCodeForTypes = true,
             },
           },
         },
       })
 
-      vim.lsp.enable({
-        "pyright",
-        "ts_ls",
-        "html",
-        "cssls",
-        "jsonls",
-        "yamlls",
-        "tailwindcss",
-        "dockerls",
-        "bashls",
+      vim.lsp.config("gopls", {
+        settings = {
+          gopls = {
+            gofumpt = true,
+            analyses = {
+              unusedparams = true,
+              shadow = true,
+            },
+            staticcheck = true,
+          },
+        },
       })
+
+      deferred.defer("lsp-bootstrap", "enable", 0, function()
+        vim.lsp.enable({
+          "basedpyright",
+          "gopls",
+          "ts_ls",
+          "html",
+          "cssls",
+          "jsonls",
+          "yamlls",
+          "tailwindcss",
+          "dockerls",
+          "bashls",
+        })
+      end)
 
       local python_augroup = vim.api.nvim_create_augroup("lc_python_global_interpreter", { clear = true })
 
@@ -311,7 +374,10 @@ return {
         group = python_augroup,
         pattern = { "*.py", "python" },
         callback = function(args)
-          vim.schedule(function()
+          deferred.defer(args.buf, "python-filetype", 25, function()
+            if not vim.api.nvim_buf_is_valid(args.buf) then
+              return
+            end
             python.apply_project_python(args.buf)
           end)
         end,
@@ -321,7 +387,10 @@ return {
         group = python_augroup,
         callback = function()
           local bufnr = vim.api.nvim_get_current_buf()
-          vim.schedule(function()
+          deferred.defer(bufnr, "python-dirchanged", 25, function()
+            if not vim.api.nvim_buf_is_valid(bufnr) then
+              return
+            end
             python.apply_project_python(bufnr)
           end)
         end,

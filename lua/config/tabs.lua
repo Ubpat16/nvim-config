@@ -19,6 +19,7 @@ local register_buffer_ownership
 local tab_workspace
 local normalized_buffer_name
 local project_state = require("config.project_state")
+local deferred = require("config.deferred")
 local workspaces = {}
 local workspace_order = {}
 local active_workspace = nil
@@ -2105,7 +2106,12 @@ function M.setup()
       if restoring_tabs or persisting_tabs then
         return
       end
-      snapshot_floating_windows(current_tab())
+      local tab = current_tab()
+      deferred.defer("tab:" .. tab_key(tab), "snapshot-floats", 25, function()
+        if vim.api.nvim_tabpage_is_valid(tab) and not persisting_tabs then
+          snapshot_floating_windows(tab)
+        end
+      end)
     end,
   })
 
@@ -2150,8 +2156,12 @@ function M.setup()
       end
       workspaces[active_workspace].last_tab = tab
       workspaces[active_workspace].last_tab_key = key
-      record_display_windows(tab)
-      restore_floating_windows(tab)
+      deferred.defer("tab:" .. key, "restore-display", 25, function()
+        if vim.api.nvim_tabpage_is_valid(tab) and not persisting_tabs then
+          record_display_windows(tab)
+          restore_floating_windows(tab)
+        end
+      end)
     end,
   })
 

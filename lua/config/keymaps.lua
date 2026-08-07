@@ -103,6 +103,11 @@ vim.keymap.set("i", "<A-j>", "<Esc>:m .+1<CR>==gi", { desc = "Move line down", s
 vim.keymap.set("i", "<A-k>", "<Esc>:m .-2<CR>==gi", { desc = "Move line up", silent = true })
 vim.keymap.set("x", "<A-j>", ":m '>+1<CR>gv=gv", { desc = "Move selection down", silent = true })
 vim.keymap.set("x", "<A-k>", ":m '<-2<CR>gv=gv", { desc = "Move selection up", silent = true })
+-- Some terminals do not transmit Alt/Meta-arrow combinations consistently.
+vim.keymap.set("n", "<leader>mj", ":m .+1<CR>==", { desc = "Move line down", silent = true })
+vim.keymap.set("n", "<leader>mk", ":m .-2<CR>==", { desc = "Move line up", silent = true })
+vim.keymap.set("x", "<leader>mj", ":m '>+1<CR>gv=gv", { desc = "Move selection down", silent = true })
+vim.keymap.set("x", "<leader>mk", ":m '<-2<CR>gv=gv", { desc = "Move selection up", silent = true })
 
 
 
@@ -948,6 +953,9 @@ end, { desc = "Find files", silent = true })
 vim.keymap.set("n", "<leader>fg", function()
   require("telescope.builtin").live_grep()
 end, { desc = "Live grep", silent = true })
+vim.keymap.set("n", "<leader>fG", function()
+  require("telescope").extensions.live_grep_args.live_grep_args()
+end, { desc = "Live grep with arguments", silent = true })
 vim.keymap.set("n", "<leader>fp", function()
   require("config.tabs").select_file_preview()
 end, { desc = "Preview file", silent = true })
@@ -1523,16 +1531,16 @@ end, { desc = "DAP UI toggle" })
 -- Neotest: function-key runner and summary.
 vim.keymap.set("n", "<F5>", function()
   require("neotest").run.run()
-end, { desc = "Pytest nearest" })
+end, { desc = "Test nearest" })
 vim.keymap.set("n", "<F6>", function()
   require("neotest").run.run(vim.fn.expand("%"))
-end, { desc = "Pytest this file" })
+end, { desc = "Test this file" })
 vim.keymap.set("n", "<F7>", function()
   require("neotest").summary.toggle()
-end, { desc = "Pytest summary" })
+end, { desc = "Test summary" })
 vim.keymap.set("n", "<F8>", function()
   require("neotest").output.open({ enter = true, auto_close = false })
-end, { desc = "Pytest output" })
+end, { desc = "Test output" })
 vim.keymap.set("n", "<leader>Tn", function()
   require("neotest").run.run()
 end, { desc = "Neotest nearest" })
@@ -1756,15 +1764,23 @@ vim.keymap.set("n", "<leader>pa", function()
 end, { desc = "Pytest suite via uv" })
 
 -- Django.
+local function lc_django_makemigrations()
+  django.run_manage("makemigrations")
+end
+
+local function lc_django_migrate()
+  django.run_manage("migrate")
+end
+
 vim.keymap.set("n", "<leader>dc", function()
   django.run_manage("check")
 end, { desc = "Django system check" })
-vim.keymap.set("n", "dm", function()
-  django.run_manage("makemigrations")
-end, { desc = "Django makemigrations" })
-vim.keymap.set("n", "dmm", function()
-  django.run_manage("migrate")
-end, { desc = "Django migrate" })
+vim.keymap.set("n", "<leader>dM", lc_django_makemigrations, { desc = "Django makemigrations" })
+vim.keymap.set("n", "<leader>dm", lc_django_migrate, { desc = "Django migrate" })
+-- Keep the original bare mappings for users who have a terminal that handles
+-- multi-key mappings beginning with `d` reliably.
+vim.keymap.set("n", "dm", lc_django_makemigrations, { desc = "Django makemigrations" })
+vim.keymap.set("n", "dmm", lc_django_migrate, { desc = "Django migrate" })
 vim.keymap.set("n", "dx", function()
   django.prompt_manage()
 end, { desc = "Django custom command" })

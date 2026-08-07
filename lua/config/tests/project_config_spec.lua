@@ -74,6 +74,9 @@ assert(profile.run.python.env_file == vim.fs.joinpath(metadata.config_dir, ".env
 assert(profile.editor.autosave == false, "loads editor settings")
 assert(vim.deep_equal(profile.formatting.by_filetype.python, { "isort", "black" }), "loads formatter selection")
 assert(vim.deep_equal(profile.formatting.by_filetype.typescript, { "prettier" }), "unspecified formatter defaults remain")
+assert(vim.deep_equal(profile.formatting.by_filetype.go, { "gofumpt" }), "Go formatter defaults are available")
+assert(vim.deep_equal(profile.linting.by_filetype.go, { "golangcilint" }), "Go lint defaults are available")
+assert(vim.deep_equal(profile.linting.by_filetype.sql, { "sqlfluff" }), "SQL lint defaults are available")
 assert(profile.lsp.settings.pyright.python.analysis.typeCheckingMode == "strict", "loads nested LSP settings")
 assert(vim.deep_equal(project_config.neotest_args(test_a), { "--ds=settings.personal tests", "--reuse-db" }), "keeps compatibility helper")
 
@@ -96,6 +99,16 @@ local other = project_config.get(test_b)
 assert(vim.deep_equal(other.neotest.args, { "--ds=settings.other" }), "nearest config is isolated per project")
 assert(other.pytest.direct_args[1] == "--reuse-db", "missing sections preserve defaults")
 assert(other.editor.autosave == true, "default autosave remains enabled")
+
+vim.uv.sleep(20)
+write(config_b, vim.json.encode({
+  formatting = { by_filetype = { go = { "goimports" } } },
+  linting = { by_filetype = { go = { "golangcilint" }, sql = {} } },
+}))
+local go_profile = project_config.get(test_b)
+assert(vim.deep_equal(go_profile.formatting.by_filetype.go, { "goimports" }), "Go formatter overrides are accepted")
+assert(vim.deep_equal(go_profile.linting.by_filetype.go, { "golangcilint" }), "Go lint overrides are accepted")
+assert(vim.deep_equal(go_profile.linting.by_filetype.sql, {}), "SQL lint overrides are accepted")
 
 profile.editor.options.shiftwidth = 99
 assert(project_config.get(test_a).editor.options.shiftwidth == 4, "callers receive deep copies")

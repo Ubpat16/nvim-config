@@ -1,6 +1,6 @@
 # Neovim Configuration
 
-Personal Neovim configuration focused on Python/Django development, Git workflows, AI-assisted editing, testing, formatting, and fast project navigation.
+Personal Neovim configuration focused on Python/Django and Go development, Git workflows, AI-assisted editing, testing, formatting, and fast project navigation.
 
 This config is organized as Lua modules under `lua/config` and loaded from a minimal `init.lua`.
 
@@ -9,15 +9,16 @@ This config is organized as Lua modules under `lua/config` and loaded from a min
 - Lazy-loaded plugin management with `lazy.nvim`
 - LSP setup with Mason and `nvim-lspconfig`
 - Python tooling with a stable global Python interpreter
+- Go tooling with `gopls`, `gofumpt`, `golangci-lint`, and Delve
 - Formatting with `conform.nvim`
-- Linting with `nvim-lint`
+- Linting with `nvim-lint`, including SQLFluff for SQL buffers
 - Git hunk actions with `gitsigns.nvim`
 - Git commit and GitHub PR helpers with OpenAI-generated drafts
 - Persistent Git error popups for hook failures and command output
 - Telescope project navigation
-- Treesitter syntax support
+- Treesitter syntax support, including SQL
 - DAP and DAP UI for debugging
-- Neotest for Python and JavaScript test workflows
+- Neotest for Python, Go, and JavaScript test workflows
 - Django command helpers
 - Copilot, Copilot Chat, and Codex integrations
 - Snacks notifier, input, quickfile, bigfile, dashboard, explorer, image, and picker modules
@@ -35,6 +36,7 @@ Install these system tools before using the config:
 - `fd` or `fdfind`
 - Node.js and npm
 - Python 3
+- Go
 - `uv`
 - GitHub CLI, `gh`
 - A Nerd Font for icons
@@ -46,6 +48,7 @@ Optional but recommended:
 - `tree-sitter` CLI
 - `eslint_d`
 - `prettier`
+- `sqlfluff`
 
 ## Installation
 
@@ -153,13 +156,16 @@ Project-specific settings can be stored in a JSON file named `nvim.config`. Neov
     "on_save": true,
     "timeout_ms": 5000,
     "by_filetype": {
-      "python": ["ruff_fix_imports", "black"]
+      "python": ["ruff_fix_imports", "black"],
+      "go": ["gofumpt"]
     }
   },
   "linting": {
     "enabled": true,
     "by_filetype": {
-      "typescript": ["eslint_d"]
+      "typescript": ["eslint_d"],
+      "go": ["golangcilint"],
+      "sql": ["sqlfluff"]
     }
   },
   "lsp": {
@@ -301,6 +307,7 @@ Leader is space.
 | `<leader>e`                         | Toggle file explorer            |
 | `<leader>ff`                        | Find files                      |
 | `<leader>fg`                        | Live grep                       |
+| `<leader>fG`                        | Live grep with ripgrep arguments |
 | `<leader>fp`                        | Pick file to preview            |
 | `<leader>fb`                        | Buffers                         |
 | `<leader>fm`                        | Marks                           |
@@ -312,6 +319,10 @@ Leader is space.
 | `r` in operator-pending mode        | Remote Flash                    |
 | `R` in visual/operator-pending mode | Flash Treesitter search         |
 | `<C-s>` while searching             | Toggle Flash search integration |
+
+`<leader>fG` opens an argument-aware live grep prompt. Enter the search text
+followed by ripgrep arguments, for example `verification_status -g "*.py"`
+or `class User -g "*.py" -g "!migrations/**"`.
 
 ### Git
 
@@ -405,6 +416,8 @@ Bufferline owns the visible tabline. Its buffer list is scoped to the current ta
 | ------------------------ | ------------------------------- |
 | `<A-j>`                  | Move line or selection down     |
 | `<A-k>`                  | Move line or selection up       |
+| `<leader>mj`             | Move line or selection down     |
+| `<leader>mk`             | Move line or selection up       |
 | `<Tab>` in visual mode   | Indent selection                |
 | `<S-Tab>` in visual mode | Outdent selection               |
 | `<leader>dl`             | Duplicate line down             |
@@ -433,22 +446,24 @@ Bufferline owns the visible tabline. Its buffer list is scoped to the current ta
 | `:Format`      | Format current buffer           |
 | `:FormatWrite` | Format and write current buffer |
 
-Python formatting prefers Ruff, Black, and isort installed in the project virtualenv, then the tool on Neovim's PATH (including Mason), and falls back to `uv tool run <tool>`. Each formatter receives the project virtualenv environment.
+Python formatting prefers Ruff, Black, and isort installed in the project virtualenv, then the tool on Neovim's PATH (including Mason), and falls back to `uv tool run <tool>`. Go buffers use `gofumpt` when available, otherwise the Go toolchain's `gofmt` until Mason finishes installing it; Go linting uses `golangci-lint` when it is installed. SQL linting uses `sqlfluff` when it is installed and defaults to the Postgres dialect unless a project SQLFluff config is found. Each formatter receives the project virtualenv environment where applicable.
+
+Configured formatters run asynchronously after a save so the initial write stays responsive. Conform writes the formatted result back only when formatting changes the buffer; use `:FormatWrite` when formatting must complete before the command returns.
 
 ### Testing and Debugging
 
 | Key          | Action                           |
 | ------------ | -------------------------------- |
-| `<F5>`       | Neotest nearest                  |
-| `<F6>`       | Neotest current file             |
+| `<F5>`       | Neotest nearest test             |
+| `<F6>`       | Neotest current test file        |
 | `<F7>`       | Toggle Neotest summary           |
 | `<F8>`       | Open Neotest output              |
-| `<leader>Tn` | Neotest nearest                  |
-| `<leader>Tf` | Neotest current file             |
+| `<leader>Tn` | Neotest nearest test             |
+| `<leader>Tf` | Neotest current test file        |
 | `<leader>Ts` | Toggle Neotest summary           |
 | `<leader>To` | Open Neotest output              |
-| `<leader>mt` | Neotest nearest                  |
-| `<leader>mf` | Neotest current file             |
+| `<leader>mt` | Neotest nearest test             |
+| `<leader>mf` | Neotest current test file        |
 | `<leader>ma` | Neotest suite                    |
 | `<leader>ml` | Neotest last run                 |
 | `<leader>md` | Debug nearest test               |
@@ -484,8 +499,10 @@ Python formatting prefers Ruff, Black, and isort installed in the project virtua
 | Key          | Action                             |
 | ------------ | ---------------------------------- |
 | `<leader>dc` | Django system check                |
-| `dm`         | `manage.py makemigrations`         |
-| `dmm`        | `manage.py migrate`                |
+| `<leader>dM` | `manage.py makemigrations`         |
+| `<leader>dm` | `manage.py migrate`                |
+| `dm`         | `manage.py makemigrations` (legacy) |
+| `dmm`        | `manage.py migrate` (legacy)        |
 | `dx`         | Prompt for a custom Django command |
 | `df`         | Pick and run a Django script       |
 
@@ -509,12 +526,20 @@ For `http` filetype buffers:
 Projects containing `graphify-out/graph.json` get a Graphify integration. Use
 `<leader>gq` or `:Graphify` to open a reusable right-side vertical Graphify
 transcript panel, matching the Codex panel layout. It contains a navigable,
-read-only results field and a distinct multiline input field below it. The
-panel uses `Snacks.win` when available and falls back to managed native splits.
+normal-mode results field and a distinct multiline input field below it. The
+panel uses a Snacks window when available and falls back to managed native
+splits. A real terminal buffer is intentionally not used for results because
+terminal mode intercepts mouse events and makes click-to-Normal behavior
+unreliable.
 The integration searches upward from the current buffer and then from Neovim's
 current working directory, using the nearest matching project. It does not
 build or refresh the graph automatically; use `<leader>gu` or
 `:GraphifyUpdate` when you want to refresh the output.
+For oversized graphs, Graphify's update/watch rebuild preserves `graph.json` and
+the text report while skipping the HTML visualization automatically. Full
+initialization defaults to `graphify extract --no-viz`; after reducing the
+project scope enough for an interactive graph, set `init.no_viz = false` to
+generate `graph.html` again.
 For a project without Graphify output, use `<leader>gi` or `:GraphifyInit` to
 confirm and run `graphify extract <project-root>`.
 
@@ -533,9 +558,11 @@ or `<Esc>` to hide the panel; its buffer, transcript, history, metadata, and
 running request are preserved. Press `<C-]>` to return focus to the previous
 window without hiding Graphify. Navigate between the two fields with standard
 window movement in Normal mode. Enter submits the query; `<S-CR>` inserts a
-newline in the input field. Source locations such as
-`src/auth.py:42:8` are highlighted; click them or place the cursor on one and
-press `<CR>` to open the file and jump to its line and column.
+newline in the input field. Source locations such as `src/auth.py:42:8` are
+recognized; click the results pane to focus it in Normal mode, then navigate
+with Vim motions. Double-click a reference, or place the cursor on one and
+press `<CR>`, to open the file and jump to its line and column. Press `i` or
+`I` from the results pane to return directly to the input.
 
 The two fields are one managed Graphify panel group: closing either child with
 `q`, `<Esc>`, `<leader>bd`, or by closing its window hides both fields together.
@@ -600,6 +627,9 @@ require("config.graphify").setup({
   newline_key = "<S-CR>",
   input_placeholder = "Ask Graphify: query text, :path source -> target, or :explain node",
   unfocus_key = "<C-]>",
+  init = {
+    no_viz = true,
+  },
   preview = {
     mode = "browser",
     -- For a custom browser: mode = "command", command = { "firefox", "--new-window" }

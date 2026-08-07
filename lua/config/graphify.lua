@@ -31,11 +31,14 @@ local DEFAULTS = {
   init = {
     force = false,
     no_cluster = false,
+    no_viz = true,
   },
   window = {
     layout = "vertical",
     side = "right",
     width = 0.40,
+    -- Keep results in a normal read-only buffer. A real terminal buffer
+    -- intercepts mouse events and makes click-to-Normal behavior unreliable.
     provider = "snacks",
     input_height = 3,
   },
@@ -195,6 +198,9 @@ function M.build_init_argv(root, opts)
   end
   if opts.no_cluster then
     argv[#argv + 1] = "--no-cluster"
+  end
+  if opts.no_viz then
+    argv[#argv + 1] = "--no-viz"
   end
   return argv
 end
@@ -561,6 +567,7 @@ local function current_state()
       requests = {},
       input_cursor = { 1, 0 },
       transcript_cursor = { 1, 0 },
+      transcript_cache = {},
       hidden = true,
       closing = false,
       destroying = false,
@@ -691,6 +698,9 @@ valid_input_window = function(state)
 end
 
 transcript_lines = function(state)
+  if state.provider == "snacks_terminal" then
+    return state.transcript_cache or {}
+  end
   if not valid_buffer(state) then
     return {}
   end
@@ -824,6 +834,13 @@ local function style_buffer(state)
   end
   local buf = state.buf
   state.references = {}
+  if state.provider == "snacks_terminal" then
+    for index, line in ipairs(transcript_lines(state)) do
+      local reference = M.parse_reference(line, 0, state.root)
+      if reference then state.references[index] = reference end
+    end
+    return
+  end
   vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
   for index, line in ipairs(transcript_lines(state)) do
     local zero = index - 1
@@ -867,6 +884,14 @@ local function render(state, lines)
   if not valid_buffer(state) then
     return
   end
+  if state.provider == "snacks_terminal" then
+    state.transcript_cache = vim.deepcopy(lines)
+    local channel = vim.b[state.buf].terminal_job_id
+    if channel then
+      vim.api.nvim_chan_send(channel, table.concat(lines, "\r\n") .. "\r\n")
+    end
+    return
+  end
   local modified = vim.bo[state.buf].modifiable
   local readonly = vim.bo[state.buf].readonly
   vim.bo[state.buf].modifiable = true
@@ -888,6 +913,15 @@ local function append_lines(state, new_lines)
     vim.list_extend(normalized_lines, vim.split(tostring(line), "\n", { plain = true }))
   end
   vim.list_extend(lines, normalized_lines)
+  if state.provider == "snacks_terminal" then
+    state.transcript_cache = lines
+    local channel = vim.b[state.buf].terminal_job_id
+    if channel and #normalized_lines > 0 then
+      vim.api.nvim_chan_send(channel, table.concat(normalized_lines, "\r\n") .. "\r\n")
+    end
+    style_buffer(state)
+    return
+  end
   render(state, lines)
   if cursor and valid_window(state) then
     local row = math.min(cursor[1], math.max(1, #lines))
@@ -1117,22 +1151,44 @@ local function attach_mappings(state)
       notify("No Graphify node under the cursor.", vim.log.levels.INFO)
     end
   end, "Explain Graphify node")
-  local function open_mouse_reference()
+  local function focus_transcript_at_mouse()
     local mouse = vim.fn.getmousepos()
-    if mouse.line > 0 and valid_window(state) then
-      local position = vim.api.nvim_win_get_position(state.win)
+    local transcript_win = state.transcript_win or state.win
+    if mouse.line > 0 and transcript_win and vim.api.nvim_win_is_valid(transcript_win) then
+      local position = vim.api.nvim_win_get_position(transcript_win)
       local row = mouse.line - position[1]
       local column = mouse.column - position[2]
       if row < 1 or column < 1 then
         return
       end
       vim.cmd("stopinsert")
-      vim.api.nvim_win_set_cursor(state.win, { row, column - 1 })
+      vim.api.nvim_set_current_win(transcript_win)
+      vim.api.nvim_win_set_cursor(transcript_win, { row, column - 1 })
+    end
+  end
+
+  local function open_mouse_result()
+    focus_transcript_at_mouse()
+    if valid_window(state) and vim.api.nvim_get_current_win() == state.win then
       open_result_or_reference(state)
     end
   end
-  map(transcript_buf, "n", "<LeftMouse>", open_mouse_reference, "Open source location")
-  map(transcript_buf, "i", "<LeftMouse>", open_mouse_reference, "Open source location")
+  -- A single click is a focus/navigation gesture, matching terminal panels.
+  -- Keep result/source actions explicit so clicking output never unexpectedly
+  -- changes the current file or opens a browser preview.
+  map(transcript_buf, { "n", "i", "t" }, "<LeftMouse>", focus_transcript_at_mouse, "Focus Graphify results")
+  map(transcript_buf, "t", "<C-]>", function()
+    vim.cmd("stopinsert")
+    unfocus()
+  end, "Return to previous window")
+  map(transcript_buf, "t", "q", function()
+    vim.cmd("stopinsert")
+    hide_panel(state)
+  end, "Hide Graphify")
+  map(transcript_buf, "t", "<Esc>", function()
+    vim.cmd("stopinsert")
+  end, "Enter Graphify Normal mode")
+  map(transcript_buf, "n", "<2-LeftMouse>", open_mouse_result, "Open Graphify result or source")
 
   for _, lhs in ipairs({ "i", "a", "o", "I", "A", "O", "R", "c", "C", "s", "S" }) do
     map(transcript_buf, "n", lhs, focus_input, "Focus Graphify input")
@@ -1180,6 +1236,35 @@ local function attach_mappings(state)
     return ""
   end, { expr = true, desc = "Next Graphify request" })
   if not state.mappings_attached then
+    vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+      buffer = transcript_buf,
+      callback = function()
+        if vim.api.nvim_get_current_buf() ~= transcript_buf then return end
+        if vim.fn.mode():sub(1, 1) == "i" or vim.fn.mode():sub(1, 1) == "t" then
+          vim.schedule(function()
+            if vim.api.nvim_get_current_buf() == transcript_buf then
+              vim.cmd("stopinsert")
+            end
+          end)
+        end
+      end,
+    })
+    local function stopinsert_when_leaving_group()
+      vim.schedule(function()
+        local current_buf = vim.api.nvim_get_current_buf()
+        if M.group_state(current_buf) == state then return end
+        local mode = vim.fn.mode():sub(1, 1)
+        if mode == "i" or mode == "t" then vim.cmd("stopinsert") end
+      end)
+    end
+    vim.api.nvim_create_autocmd("WinLeave", {
+      buffer = transcript_buf,
+      callback = stopinsert_when_leaving_group,
+    })
+    vim.api.nvim_create_autocmd("WinLeave", {
+      buffer = input_buf,
+      callback = stopinsert_when_leaving_group,
+    })
     vim.api.nvim_create_autocmd({ "InsertEnter", "ModeChanged", "BufEnter" }, {
       buffer = transcript_buf,
       callback = function()
@@ -1307,6 +1392,90 @@ local function configure_input_window(state)
   vim.wo[state.input_win].winhighlight = "Normal:GraphifyInputNormal,NormalNC:GraphifyInputNormalNC,WinBar:GraphifyInputTitle"
 end
 
+local function create_terminal_panel(state)
+  local ok, snacks = pcall(require, "snacks")
+  if not ok or not snacks or type(snacks.terminal) ~= "table" or type(snacks.terminal.open) ~= "function" then
+    return false
+  end
+
+  local ok_panel, panel = pcall(snacks.terminal.open, { "cat" }, {
+    interactive = false,
+    start_insert = false,
+    auto_insert = false,
+    auto_close = false,
+    win = {
+      position = config.window.side == "left" and "left" or "right",
+      width = config.window.width,
+      height = 0,
+      relative = "editor",
+      enter = false,
+      minimal = false,
+      wo = {
+        wrap = true,
+        cursorline = true,
+        number = false,
+        relativenumber = false,
+        signcolumn = "no",
+        winbar = "%#Title# Graphify Results %#Normal#",
+        winfixbuf = true,
+      },
+    },
+  })
+  if not ok_panel or not panel or not panel:buf_valid() or not panel:win_valid() then
+    return false
+  end
+
+  state.provider = "snacks_terminal"
+  state.panel = panel
+  state.buf = panel.buf
+  state.transcript_buf = state.buf
+  state.win = panel.win
+  state.transcript_win = panel.win
+  state.hidden = false
+  vim.bo[state.buf].bufhidden = "hide"
+  vim.bo[state.buf].filetype = "graphify"
+  vim.bo[state.buf].swapfile = false
+  vim.bo[state.buf].buflisted = false
+  vim.api.nvim_buf_set_name(state.buf, "Graphify: " .. state.root)
+  configure_transcript_window(state)
+  render(state, {
+    "[Graphify] " .. state.root,
+    "Graphify commands: :query text | :path source -> target | :explain node",
+    "",
+  })
+  sync_buffer_metadata(state)
+  return true
+end
+
+local function create_terminal_input_panel(state)
+  local ok, snacks = pcall(require, "snacks")
+  local win_factory = ok and snacks and snacks.win
+  local callable = type(win_factory) == "function"
+    or (type(win_factory) == "table" and getmetatable(win_factory) and getmetatable(win_factory).__call)
+  if not callable then
+    return false
+  end
+  local ok_input, input_panel = pcall(win_factory, {
+    buf = state.input_buf,
+    relative = "win",
+    win = state.win,
+    position = "bottom",
+    height = config.window.input_height or 3,
+    enter = true,
+    minimal = false,
+    fixbuf = true,
+    wo = { wrap = true, cursorline = true, winfixbuf = true },
+  })
+  if not ok_input then
+    notify("Graphify input panel failed: " .. tostring(input_panel), vim.log.levels.WARN)
+    return false
+  end
+  state.input_panel = input_panel
+  state.input_win = input_panel.win
+  configure_input_window(state)
+  return true
+end
+
 local function show_input_window(state)
   if state.input_panel and not state.input_panel:valid() then
     state.input_panel.opts.win = state.win
@@ -1331,8 +1500,42 @@ local function show_input_window(state)
 end
 
 ensure_window = function(state)
-  configure_transcript_buffer(state)
   configure_input_buffer(state)
+  if config.window.provider == "snacks_terminal" then
+    if panel_is_visible(state) then
+      state.hidden = false
+      restore_transcript_cursor(state)
+      vim.api.nvim_set_current_win(state.input_win)
+      if state.input_cursor then vim.api.nvim_win_set_cursor(state.input_win, state.input_cursor) end
+      vim.cmd("startinsert")
+      return
+    end
+    if not state.panel or not state.panel:buf_valid() then
+      if not create_terminal_panel(state) then
+        notify("Snacks terminal unavailable; using the managed Graphify panel.", vim.log.levels.WARN)
+        config.window.provider = "snacks"
+      end
+    elseif not state.panel:win_valid() then
+      state.panel:show()
+      state.win = state.panel.win
+      state.transcript_win = state.win
+      state.hidden = false
+      configure_transcript_window(state)
+    end
+    if state.provider == "snacks_terminal" then
+      if not state.input_panel then create_terminal_input_panel(state) end
+      show_input_window(state)
+      state.win = state.panel.win
+      state.transcript_win = state.win
+      restore_transcript_cursor(state)
+      if not state.mappings_attached then attach_mappings(state) end
+      vim.api.nvim_set_current_win(state.input_win)
+      if state.input_cursor then vim.api.nvim_win_set_cursor(state.input_win, state.input_cursor) end
+      vim.cmd("startinsert")
+      return
+    end
+  end
+  configure_transcript_buffer(state)
   if panel_is_visible(state) then
     state.hidden = false
     restore_transcript_cursor(state)

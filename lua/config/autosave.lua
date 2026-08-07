@@ -1,4 +1,7 @@
 local project_config = require("config.project_config")
+local deferred = require("config.deferred")
+local autosave_scheduled = {}
+local autosave_in_progress = {}
 
 local function lc_autosave_buffer(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -16,18 +19,56 @@ local function lc_autosave_buffer(bufnr)
   if vim.api.nvim_buf_get_name(bufnr) == "" then
     return
   end
-  if not project_config.get(project_config.start_path(bufnr)).editor.autosave then
+  if autosave_in_progress[bufnr] then
+    return
+  end
+  if not project_config.for_buffer(bufnr).editor.autosave then
     return
   end
 
-  vim.api.nvim_buf_call(bufnr, function()
+  autosave_in_progress[bufnr] = true
+  pcall(vim.api.nvim_buf_call, bufnr, function()
     vim.cmd("silent update")
+  end)
+  autosave_in_progress[bufnr] = nil
+end
+
+local function schedule_autosave(bufnr)
+  if autosave_scheduled[bufnr] then
+    return
+  end
+  autosave_scheduled[bufnr] = true
+  vim.schedule(function()
+    autosave_scheduled[bufnr] = nil
+    lc_autosave_buffer(bufnr)
   end)
 end
 
 local project_state = require("config.project_state")
 local lc_max_recent_project_files = 10
 local lc_remember_last_project_file
+local pending_recent_files = {}
+
+local function flush_recent_files(root)
+  local pending = pending_recent_files[root]
+  if not pending then
+    return
+  end
+
+  pending_recent_files[root] = nil
+  project_state.update_root_state(root, function(state)
+    state.recent_files = pending.files
+    state.last = pending.last
+    return state
+  end)
+end
+
+local function flush_all_recent_files()
+  for root in pairs(pending_recent_files) do
+    deferred.cancel("project-state", root)
+    flush_recent_files(root)
+  end
+end
 local function lc_normalize_path(path)
   return project_state.normalize_path(path)
 end
@@ -112,22 +153,22 @@ lc_remember_last_project_file = function(bufnr)
     return
   end
 
-  project_state.update_root_state(root, function(state)
-    local files = {}
-    for _, existing in ipairs(type(state.recent_files) == "table" and state.recent_files or {}) do
-      if existing ~= normalized_path and vim.fn.filereadable(existing) == 1 then
-        files[#files + 1] = existing
-      end
+  local current = project_state.read_root_state(root) or {}
+  local files = {}
+  for _, existing in ipairs(type(current.recent_files) == "table" and current.recent_files or {}) do
+    if existing ~= normalized_path and vim.fn.filereadable(existing) == 1 then
+      files[#files + 1] = existing
     end
+  end
 
-    table.insert(files, 1, normalized_path)
-    while #files > lc_max_recent_project_files do
-      table.remove(files)
-    end
+  table.insert(files, 1, normalized_path)
+  while #files > lc_max_recent_project_files do
+    table.remove(files)
+  end
 
-    state.recent_files = files
-    state.last = normalized_path
-    return state
+  pending_recent_files[root] = { files = files, last = normalized_path }
+  deferred.defer("project-state", root, 150, function()
+    flush_recent_files(root)
   end)
 end
 
@@ -138,7 +179,13 @@ local function lc_forget_project_file(path)
   end
 
   local changed = false
-  project_state.update_root_state(project_state.project_root_for_path(normalized_path), function(state)
+  local root = project_state.project_root_for_path(normalized_path)
+  if not root then
+    return false
+  end
+  pending_recent_files[root] = nil
+  deferred.cancel("project-state", root)
+  project_state.update_root_state(root, function(state)
     local files = {}
     for _, existing in ipairs(type(state.recent_files) == "table" and state.recent_files or {}) do
       if lc_normalize_path(existing) == normalized_path then
@@ -164,7 +211,11 @@ end
 vim.api.nvim_create_autocmd({ "BufLeave", "BufWinLeave", "FocusLost", "VimLeavePre" }, {
   group = vim.api.nvim_create_augroup("autosave_on_leave", { clear = true }),
   callback = function(args)
-    lc_autosave_buffer(args.buf)
+    if args.event == "FocusLost" or args.event == "VimLeavePre" then
+      lc_autosave_buffer(args.buf)
+    else
+      schedule_autosave(args.buf)
+    end
   end,
 })
 
@@ -172,6 +223,9 @@ vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "VimLeavePre" }, {
   group = vim.api.nvim_create_augroup("last_project_file", { clear = true }),
   callback = function(args)
     lc_remember_last_project_file(args.buf)
+    if args.event == "VimLeavePre" then
+      flush_all_recent_files()
+    end
   end,
 })
 

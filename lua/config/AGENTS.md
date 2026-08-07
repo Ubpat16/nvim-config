@@ -168,6 +168,12 @@ This behavior is implemented by `route_duplicate_buffer()` in `tabs.lua`. When
 changing file-opening behavior, preserve this routing unless the requested
 change explicitly alters the workspace model.
 
+File opening keeps duplicate routing, buffer ownership, and cursor restoration
+synchronous. Project-state persistence, LSP profile refreshes, linting,
+Treesitter startup, and Git decorations are deferred through
+`config.deferred`; deferred callbacks must verify that their buffer or tab is
+still valid before applying work.
+
 ## Key Files
 
 - `tabs.lua`: source of truth for runtime workspace, tab, window, and buffer
@@ -222,6 +228,7 @@ Common keymaps:
 
 - `<leader>bn` / `]b`: next buffer in current tab
 - `<leader>bp` / `[b`: previous buffer in current tab
+- `<leader>mj` / `<leader>mk`: move the current line or selection down/up
 - `<leader>bc`: clear the active workspace's normal file buffers
 - `<leader>bzc`: clear all buffers and file registry entries
 - `<leader>fp`: pick a file to preview in a floating window
@@ -232,6 +239,7 @@ Common keymaps:
 - `<leader>gu`: update Graphify output for the nearest project
 - `<leader>gi`: initialize Graphify for a project without graph output
 - `<leader>gP`: open the AI-assisted GitHub PR preview
+- `<leader>dm`: run Django `migrate`; `<leader>dM`: run `makemigrations`
 
 Graphify owns one unlisted `nofile` transcript buffer and one unlisted `nofile`
 multiline input buffer per detected project. The visible panel has a managed
@@ -246,6 +254,10 @@ transcript redirect to the input field.
 Preview and source-location actions do not hide the group. New tab and new
 workspace creation call Graphify's tab-change hook to hide the current group
 as part of establishing the new layout.
+Graphify's update/watch rebuild already skips oversized HTML while preserving
+the graph and report. Full initialization defaults to `extract --no-viz` for
+large projects; callers can set `init.no_viz = false` when the project has been
+reduced enough to render an interactive HTML preview.
 
 These two child windows and buffers are owned by one Graphify panel group:
 

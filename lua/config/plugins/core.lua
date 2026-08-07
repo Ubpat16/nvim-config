@@ -259,6 +259,10 @@ return {
     cmd = "Telescope",
     dependencies = {
       "nvim-lua/plenary.nvim",
+      {
+        "nvim-telescope/telescope-live-grep-args.nvim",
+        version = "^1.0.0",
+      },
       "nvim-telescope/telescope-ui-select.nvim",
     },
     config = function()
@@ -273,8 +277,9 @@ return {
 
   {
     "lewis6991/gitsigns.nvim",
-    event = { "BufReadPre", "BufNewFile" },
+    event = { "BufReadPost", "BufNewFile" },
     opts = {
+      update_debounce = 200,
       signs = {
         add = { text = "+" },
         change = { text = "~" },
@@ -327,38 +332,54 @@ return {
     lazy = false,
     build = ":TSUpdate",
     config = function()
+      local deferred = require("config.deferred")
       require("nvim-treesitter").setup()
-      require("nvim-treesitter").install({
-        "bash",
-        "css",
-        "dockerfile",
-        "gitignore",
-        "html",
-        "http",
-        "javascript",
-        "json",
-        "kotlin",
-        "lua",
-        "markdown",
-        "markdown_inline",
-        "python",
-        "regex",
-        "tsx",
-        "typescript",
-        "vim",
-        "vimdoc",
-        "yaml",
-      })
+      deferred.defer("treesitter", "install", 1000, function()
+        require("nvim-treesitter").install({
+          "bash",
+          "css",
+          "dockerfile",
+          "gitignore",
+          "go",
+          "gomod",
+          "gosum",
+          "gowork",
+          "html",
+          "http",
+          "javascript",
+          "json",
+          "kotlin",
+          "lua",
+          "markdown",
+          "markdown_inline",
+          "python",
+          "regex",
+          "sql",
+          "tsx",
+          "typescript",
+          "vim",
+          "vimdoc",
+          "yaml",
+        })
+      end)
 
       local augroup = vim.api.nvim_create_augroup("lc_nvim_treesitter_ft", { clear = true })
       vim.api.nvim_create_autocmd("FileType", {
         group = augroup,
         pattern = "*",
-        callback = function()
-          if not pcall(vim.treesitter.start) then
-            return
-          end
-          vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        callback = function(event)
+          local bufnr = event.buf
+          deferred.defer(bufnr, "treesitter", 0, function()
+            if not vim.api.nvim_buf_is_valid(bufnr) or vim.b[bufnr].lc_treesitter_started then
+              return
+            end
+            local ok = pcall(vim.api.nvim_buf_call, bufnr, vim.treesitter.start)
+            if not ok then
+              return
+            end
+            vim.b[bufnr].lc_treesitter_started = true
+            vim.bo[bufnr].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end)
         end,
       })
     end,

@@ -103,6 +103,19 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "sql" },
+  callback = function()
+    vim.cmd([[
+      syntax case ignore
+      syntax keyword LCPostgresSqlType bigserial smallserial serial citext bytea varchar timestamptz
+      syntax keyword LCPostgresSqlKeyword primary key unique default extension exists
+      highlight default link LCPostgresSqlType Type
+      highlight default link LCPostgresSqlKeyword Keyword
+    ]])
+  end,
+})
+
 local lc_disposable_ui_group = vim.api.nvim_create_augroup("lc_disposable_ui_buffers", { clear = true })
 
 local function lc_configure_disposable_ui_window(event)

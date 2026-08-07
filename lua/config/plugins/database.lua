@@ -39,6 +39,16 @@ return {
         desc = "Toggle database client",
       },
     },
-    opts = {},
+    opts = function()
+      local dbee_sources = require("dbee.sources")
+      local project_source = require("config.dbee").ProjectSource:new()
+
+      return {
+        sources = {
+          dbee_sources.EnvSource:new("DBEE_CONNECTIONS"),
+          project_source,
+        },
+      }
+    end,
   },
 }

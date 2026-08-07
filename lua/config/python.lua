@@ -70,7 +70,12 @@ local function project_root(bufnr, start_dir)
       start_path = name
     end
   end
-  local configured = project_config.get(start_path).project.root
+  local configured
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    configured = project_config.for_buffer(bufnr).project.root
+  else
+    configured = project_config.get(start_path).project.root
+  end
   if configured then
     return configured
   end
@@ -189,7 +194,12 @@ function M.project_python(bufnr, start_dir)
     end
   end
 
-  local profile = project_config.get(start_dir or name)
+  local profile
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    profile = project_config.for_buffer(bufnr)
+  else
+    profile = project_config.get(start_dir or name)
+  end
   local configured = normalize_venv_executable(profile.python.interpreter)
   if configured then
     return configured
@@ -303,7 +313,7 @@ function M.apply_project_python(bufnr)
 
   project_config.apply_lsp_settings(bufnr)
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
-    if client.name == "pyright" then
+    if client.name == "pyright" or client.name == "basedpyright" then
       client.settings = client.settings or {}
       client.settings.python = vim.tbl_deep_extend("force", client.settings.python or {}, { pythonPath = py })
       client:notify("workspace/didChangeConfiguration", { settings = client.settings })

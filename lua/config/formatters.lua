@@ -4,9 +4,28 @@ local conform_util = require("conform.util")
 local project_config = require("config.project_config")
 local python = require("config.python")
 
+local function gofumpt_command()
+  local command = vim.fn.exepath("gofumpt")
+  if command ~= "" then
+    return command
+  end
+
+  local mason_command = vim.fs.joinpath(vim.fn.stdpath("data"), "mason", "bin", "gofumpt")
+  if vim.fn.executable(mason_command) == 1 then
+    return mason_command
+  end
+
+  local gofmt = vim.fn.exepath("gofmt")
+  if gofmt ~= "" then
+    return gofmt
+  end
+
+  return "gofumpt"
+end
+
 local function python_project_root(ctx)
   local bufnr = ctx.bufnr or ctx.buf or 0
-  local configured = project_config.get(project_config.start_path(bufnr)).project.root
+  local configured = project_config.for_buffer(bufnr).project.root
   if configured then
     return configured
   end
@@ -30,7 +49,7 @@ end
 
 function M.options_for_buffer(bufnr)
   bufnr = bufnr or 0
-  local profile = project_config.get(project_config.start_path(bufnr))
+  local profile = project_config.for_buffer(bufnr)
   local filetype = vim.bo[bufnr].filetype
   return {
     formatters = vim.deepcopy(profile.formatting.by_filetype[filetype]),
@@ -63,6 +82,10 @@ function M.setup()
       lsp_format = "fallback",
     },
     formatters = {
+      gofumpt = {
+        command = gofumpt_command,
+        stdin = true,
+      },
       ruff_fix_imports = {
         command = function(_, ctx)
           return python_tool("ruff", ctx)
@@ -115,7 +138,7 @@ function M.setup()
         env = python_formatter_env,
       },
     },
-    format_on_save = function(bufnr)
+    format_after_save = function(bufnr)
       local configured = M.options_for_buffer(bufnr)
       if not configured.on_save then
         return nil
@@ -124,6 +147,7 @@ function M.setup()
         formatters = configured.formatters,
         timeout_ms = configured.timeout_ms,
         lsp_format = configured.lsp_format,
+        quiet = true,
       }
     end,
   })

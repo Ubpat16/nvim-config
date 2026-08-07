@@ -38,6 +38,7 @@ write(vim.fs.joinpath(root, "nvim.config"), vim.json.encode({
   django = { root = "backend", manage_py = "backend/app/manage.py", env_file = ".env.test" },
   neotest = { args = { "--ds=settings.tests", "value with spaces" } },
   pytest = { direct_args = { "--reuse-db", "-q" }, env_file = ".env.test" },
+  linting = { by_filetype = { sql = {} } },
   run = { python = { args = { "--name", "spaced value" }, env_file = ".env.run" } },
 }))
 
@@ -52,6 +53,7 @@ local django = require("config.django")
 local commands = require("config.project_commands")
 
 local configured_profile = project_config.get(test_file)
+assert(vim.deep_equal(configured_profile.linting.by_filetype.sql, {}), "configured SQL lint override is consumed")
 local configured_python = python.project_python(nil, test_file)
 assert(configured_python == configured_profile.python.interpreter, "configured interpreter preserves its virtualenv path")
 assert(python.neotest_python(backend) == configured_profile.python.interpreter, "neotest resolves Python from its supplied test root")

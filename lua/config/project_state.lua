@@ -14,6 +14,7 @@ local project_markers = {
 }
 
 local state_cache = {}
+local project_root_cache = {}
 
 local function normalize_path(path)
   if type(path) ~= "string" or path == "" then
@@ -60,14 +61,27 @@ local function project_root_for_path(path)
     start = vim.fn.getcwd()
   end
 
+  local cache_key = normalize_path(start)
+  if cache_key and project_root_cache[cache_key] then
+    return project_root_cache[cache_key]
+  end
+
   local git_marker = vim.fs.find({ ".git" }, { path = start, upward = true })[1]
   if git_marker then
-    return normalize_path(vim.fn.fnamemodify(git_marker, ":h"))
+    local root = normalize_path(vim.fn.fnamemodify(git_marker, ":h"))
+    if cache_key then
+      project_root_cache[cache_key] = root
+    end
+    return root
   end
 
   local marker = vim.fs.find(project_markers, { path = start, upward = true })[1]
   local root = marker and vim.fn.fnamemodify(marker, ":h") or vim.fn.getcwd()
-  return normalize_path(root)
+  root = normalize_path(root)
+  if cache_key then
+    project_root_cache[cache_key] = root
+  end
+  return root
 end
 
 local function startup_directory_arg()
@@ -148,7 +162,17 @@ function M.state_path_for_root(root)
   return state_path(root)
 end
 
-function M.read_root_state(root)
+local function encode_state(state)
+  return vim.json.encode(state)
+end
+
+local function file_fingerprint(path)
+  local stat = vim.uv.fs_stat(path)
+  local mtime = stat and stat.mtime or {}
+  return table.concat({ stat and stat.size or 0, mtime.sec or 0, mtime.nsec or 0 }, ":")
+end
+
+local function read_root_state_from_disk(root)
   local path = state_path(root)
   if not path then
     return nil
@@ -173,10 +197,43 @@ function M.read_root_state(root)
   return nil
 end
 
+local function cached_state(root)
+  root = normalize_path(root)
+  if not root then
+    return nil
+  end
+  local path = state_path(root)
+  local fingerprint = file_fingerprint(path)
+  if state_cache[root] and state_cache[root].fingerprint == fingerprint then
+    return state_cache[root]
+  end
+
+  local state = read_root_state_from_disk(root)
+  local entry = {
+    state = state,
+    encoded = state and encode_state(state) or nil,
+    fingerprint = fingerprint,
+  }
+  state_cache[root] = entry
+  return entry
+end
+
+function M.read_root_state(root)
+  local entry = cached_state(root)
+  return entry and entry.state or nil
+end
+
 function M.write_root_state(root, state)
   local path = state_path(root)
   if not path then
     return false
+  end
+
+  local content = encode_state(state)
+  local normalized = normalize_path(root)
+  local entry = cached_state(normalized)
+  if entry and entry.encoded == content and vim.fn.filereadable(path) == 1 then
+    return true
   end
 
   ensure_state_dir()
@@ -185,8 +242,13 @@ function M.write_root_state(root, state)
     return false
   end
 
-  file:write(vim.json.encode(state))
+  file:write(content)
   file:close()
+  state_cache[normalized] = {
+    state = state,
+    encoded = content,
+    fingerprint = file_fingerprint(path),
+  }
   return true
 end
 
@@ -197,25 +259,35 @@ function M.clear_root_state(root)
   end
 
   if vim.fn.filereadable(path) == 1 then
-    return vim.fn.delete(path) == 0
+    local ok = vim.fn.delete(path) == 0
+    state_cache[normalize_path(root)] = nil
+    return ok
   end
 
   return true
 end
 
 function M.update_root_state(root, updater)
-  local current = M.read_root_state(root) or {
+  local entry = cached_state(root) or { state = nil, encoded = nil }
+  local current = entry.state or {
     version = 2,
     root = normalize_path(root),
     tabs = {},
     recent_files = {},
   }
+  local before = encode_state(current)
 
   local updated = updater(current) or current
   if type(updated) == "table" then
     updated.version = 2
     updated.root = normalize_path(root)
-    M.write_root_state(root, updated)
+    if encode_state(updated) ~= before then
+      M.write_root_state(root, updated)
+    else
+      entry.state = updated
+      entry.encoded = before
+      entry.fingerprint = file_fingerprint(state_path(root))
+    end
   end
 
   return updated

@@ -14,11 +14,13 @@ return {
 
   {
     "mfussenegger/nvim-lint",
-    event = { "BufReadPre", "BufNewFile" },
+    event = { "BufReadPost", "BufNewFile" },
     config = function()
       local lint = require("lint")
+      local lint_timers = {}
       lint.linters_by_ft = {}
       local base_ruff = vim.deepcopy(lint.linters.ruff)
+      local base_sqlfluff = vim.deepcopy(lint.linters.sqlfluff)
 
       local function configure_ruff(bufnr)
         local configured = vim.deepcopy(base_ruff)
@@ -36,25 +38,88 @@ return {
         lint.linters.ruff = configured
       end
 
+      local function has_sqlfluff_config(bufnr)
+        local start_path = project_config.start_path(bufnr)
+        local start_dir = vim.fn.isdirectory(start_path) == 1 and start_path or vim.fn.fnamemodify(start_path, ":h")
+        return vim.fs.find({ ".sqlfluff", "pyproject.toml", "setup.cfg", "tox.ini", "pep8.ini" }, {
+          path = start_dir,
+          upward = true,
+          type = "file",
+        })[1] ~= nil
+      end
+
+      local function sqlfluff_args_with_default_dialect(args)
+        local configured = vim.deepcopy(args or {})
+        for index, arg in ipairs(configured) do
+          if arg == "-" then
+            table.insert(configured, index, "postgres")
+            table.insert(configured, index, "--dialect")
+            return configured
+          end
+        end
+        vim.list_extend(configured, { "--dialect", "postgres" })
+        return configured
+      end
+
+      local function configure_sqlfluff(bufnr)
+        local configured = vim.deepcopy(base_sqlfluff)
+        if not has_sqlfluff_config(bufnr) then
+          configured.args = sqlfluff_args_with_default_dialect(configured.args)
+        end
+        lint.linters.sqlfluff = configured
+      end
+
       local lint_augroup = vim.api.nvim_create_augroup("lint", { clear = true })
-      vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
-        group = lint_augroup,
-        callback = function(event)
-          local profile = project_config.get(project_config.start_path(event.buf))
+      local function schedule_lint(event)
+        local bufnr = event.buf
+        if not vim.api.nvim_buf_is_valid(bufnr) or vim.b[bufnr].conform_applying_formatting then
+          return
+        end
+
+        local previous = lint_timers[bufnr]
+        if previous then
+          pcall(previous.stop, previous)
+          pcall(previous.close, previous)
+        end
+
+        lint_timers[bufnr] = vim.defer_fn(function()
+          lint_timers[bufnr] = nil
+          if not vim.api.nvim_buf_is_valid(bufnr) or vim.b[bufnr].conform_applying_formatting then
+            return
+          end
+
+          local profile = project_config.for_buffer(bufnr)
           if not profile.linting.enabled then
             return
           end
-          local configured = vim.deepcopy(profile.linting.by_filetype[vim.bo[event.buf].filetype] or {})
+          local configured = vim.deepcopy(profile.linting.by_filetype[vim.bo[bufnr].filetype] or {})
           configured = vim.tbl_filter(function(name)
-            return name ~= "eslint_d" or vim.fn.executable("eslint_d") == 1
+            if name == "eslint_d" then
+              return vim.fn.executable("eslint_d") == 1
+            end
+            if name == "golangcilint" then
+              return vim.fn.executable("golangci-lint") == 1
+            end
+            if name == "sqlfluff" then
+              return vim.fn.executable("sqlfluff") == 1
+            end
+            return true
           end, configured)
           if vim.tbl_contains(configured, "ruff") then
-            configure_ruff(event.buf)
+            configure_ruff(bufnr)
+          end
+          if vim.tbl_contains(configured, "sqlfluff") then
+            configure_sqlfluff(bufnr)
           end
           if #configured > 0 then
             lint.try_lint(configured)
           end
-        end,
+        end, 100)
+      end
+
+      vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
+        group = lint_augroup,
+        callback = schedule_lint,
       })
     end,
   },
@@ -176,6 +241,15 @@ return {
   },
 
   {
+    "leoluz/nvim-dap-go",
+    event = "VeryLazy",
+    dependencies = { "mfussenegger/nvim-dap" },
+    config = function()
+      require("dap-go").setup({})
+    end,
+  },
+
+  {
     "rcarriga/nvim-dap-ui",
     event = "VeryLazy",
     dependencies = { "mfussenegger/nvim-dap", "nvim-neotest/nvim-nio" },
@@ -205,6 +279,7 @@ return {
       "nvim-treesitter/nvim-treesitter",
       "nvim-neotest/neotest-python",
       "nvim-neotest/neotest-jest",
+      "fredrikaverpil/neotest-golang",
     },
     config = function()
       if vim.g.lc_neotest_setup_done then
@@ -213,6 +288,7 @@ return {
       vim.g.lc_neotest_setup_done = true
 
       local jest = require("neotest-jest")({})
+      local golang = require("neotest-golang")({})
       local jest_build_spec = jest.build_spec
       jest.build_spec = function(args)
         local data = args.tree and args.tree:data() or {}
@@ -240,6 +316,7 @@ return {
             python = python.neotest_python,
           }),
           jest,
+          golang,
         },
         summary = {
           follow = false,
@@ -304,10 +381,6 @@ return {
       },
     },
     config = function()
-      pcall(function()
-        require("nvim-treesitter").install({ "http" })
-      end)
-
       package.preload["rest-nvim.script.javascript"] = function()
         local script = {}
         local logger = require("rest-nvim.logger")

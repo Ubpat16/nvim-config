@@ -38,8 +38,8 @@ assert(vim.deep_equal(explain_argv, { "graphify", "explain", "RequestRouter", "-
 
 local update_argv = graphify.build_update_argv(root, { force = true })
 assert(vim.deep_equal(update_argv, { "graphify", "update", root, "--force" }), "builds update argv")
-local init_argv = graphify.build_init_argv(root, { no_cluster = true })
-assert(vim.deep_equal(init_argv, { "graphify", "extract", root, "--no-cluster" }), "builds initialization argv")
+local init_argv = graphify.build_init_argv(root, { no_cluster = true, no_viz = true })
+assert(vim.deep_equal(init_argv, { "graphify", "extract", root, "--no-cluster", "--no-viz" }), "builds large-graph initialization argv")
 
 local selection_buf = vim.api.nvim_create_buf(false, true)
 local selection_line = 'local selected = "Auth Module/&"'
@@ -99,7 +99,11 @@ assert(transcript_buf and transcript_buf ~= input_buf, "Graphify creates distinc
 assert(graphify.is_graphify_buffer(transcript_buf), "recognizes the Graphify transcript buffer")
 assert(graphify.is_graphify_buffer(input_buf), "recognizes the Graphify input buffer")
 assert(graphify.group_state(transcript_buf) == graphify.group_state(input_buf), "both buffers share one Graphify group")
-assert(not vim.bo[transcript_buf].modifiable and vim.bo[transcript_buf].readonly, "Graphify transcript is permanently read-only")
+if vim.bo[transcript_buf].buftype == "terminal" then
+  assert(vim.b[transcript_buf].snacks_terminal ~= nil, "Graphify uses a Snacks terminal transcript")
+else
+  assert(not vim.bo[transcript_buf].modifiable and vim.bo[transcript_buf].readonly, "Graphify transcript is permanently read-only")
+end
 assert(vim.bo[input_buf].modifiable and not vim.bo[input_buf].readonly, "Graphify input is independently editable")
 local input_placeholder = vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)[1]
 assert(input_placeholder:find("› Ask Graphify:", 1, true) == 1, "Graphify input shows an actionable command placeholder")
@@ -130,6 +134,21 @@ vim.wait(20)
 streamed_callback({ code = 0, stderr = "" })
 vim.wait(20)
 local streamed_lines = vim.api.nvim_buf_get_lines(transcript_buf, 0, -1, false)
+if vim.bo[transcript_buf].buftype == "terminal" then
+  streamed_lines = graphify.group_state(transcript_buf).transcript_cache
+  vim.wait(200, function()
+    for _, line in ipairs(vim.api.nvim_buf_get_lines(transcript_buf, 0, -1, false)) do
+      if line == "delayed output while hidden" then return true end
+    end
+    return false
+  end)
+  local terminal_output = vim.api.nvim_buf_get_lines(transcript_buf, 0, -1, false)
+  local rendered_stream = false
+  for _, line in ipairs(terminal_output) do
+    rendered_stream = rendered_stream or line == "delayed output while hidden"
+  end
+  assert(rendered_stream, "Snacks terminal renders streamed Graphify output")
+end
 local retained_stream = false
 for _, line in ipairs(streamed_lines) do
   retained_stream = retained_stream or line == "delayed output while hidden"
@@ -142,13 +161,25 @@ for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
   if vim.api.nvim_win_get_buf(win) == transcript_buf then transcript_win = win end
 end
 assert(transcript_win, "Graphify exposes a navigable transcript window")
+local focus_click_mapping = vim.api.nvim_buf_get_keymap(transcript_buf, "n")
+local open_click_mapping = vim.api.nvim_buf_get_keymap(transcript_buf, "n")
+for _, mapping in ipairs(focus_click_mapping) do
+  if mapping.lhs == "<LeftMouse>" then focus_click_mapping = mapping break end
+end
+for _, mapping in ipairs(open_click_mapping) do
+  if mapping.lhs == "<2-LeftMouse>" then open_click_mapping = mapping break end
+end
+assert(focus_click_mapping.callback and focus_click_mapping.desc == "Focus Graphify results", "clicking results focuses the transcript")
+assert(open_click_mapping.callback and open_click_mapping.desc == "Open Graphify result or source", "double-clicking results keeps an explicit open action")
 local transcript_cursor = vim.api.nvim_win_get_cursor(transcript_win)
 assert(transcript_cursor[1] == #streamed_lines, "completed Graphify requests scroll the transcript to the newest result")
 vim.api.nvim_set_current_win(transcript_win)
 vim.api.nvim_feedkeys("i", "x", false)
 vim.wait(20)
 assert(vim.api.nvim_get_current_buf() == input_buf, "Insert mode redirects from transcript to Graphify input")
-assert(vim.bo[transcript_buf].modifiable == false, "transcript remains non-modifiable after insert redirect")
+if vim.bo[transcript_buf].buftype ~= "terminal" then
+  assert(vim.bo[transcript_buf].modifiable == false, "transcript remains non-modifiable after insert redirect")
+end
 local input_window_before_close = vim.api.nvim_get_current_win()
 vim.cmd("stopinsert")
 vim.api.nvim_win_close(input_window_before_close, true)

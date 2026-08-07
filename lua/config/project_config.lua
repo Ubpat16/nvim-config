@@ -2,6 +2,8 @@ local M = {}
 
 local CONFIG_NAME = "nvim.config"
 local cache = {}
+local find_cache = {}
+local buffer_cache = {}
 
 local DEFAULTS = {
   project = { root = nil },
@@ -22,6 +24,7 @@ local DEFAULTS = {
     timeout_ms = nil,
     by_filetype = {
       python = { "ruff_fix_imports", "black" },
+      go = { "gofumpt" },
       javascript = { "prettier" },
       javascriptreact = { "prettier" },
       typescript = { "prettier" },
@@ -38,10 +41,12 @@ local DEFAULTS = {
     enabled = true,
     by_filetype = {
       python = { "ruff" },
+      go = { "golangcilint" },
       javascript = { "eslint_d" },
       javascriptreact = { "eslint_d" },
       typescript = { "eslint_d" },
       typescriptreact = { "eslint_d" },
+      sql = { "sqlfluff" },
     },
   },
   lsp = { settings = {} },
@@ -91,7 +96,15 @@ local function find_config(start_path)
   if not start then
     return nil
   end
-  return normalize(vim.fs.find(CONFIG_NAME, { path = start, upward = true, type = "file" })[1])
+  local cached = find_cache[start]
+  if cached then
+    return cached.path
+  end
+  local path = normalize(vim.fs.find(CONFIG_NAME, { path = start, upward = true, type = "file" })[1])
+  if path then
+    find_cache[start] = { path = path }
+  end
+  return path
 end
 
 local function fingerprint(stat)
@@ -402,6 +415,29 @@ function M.get(start_path)
   }
 end
 
+function M.invalidate()
+  find_cache = {}
+  buffer_cache = {}
+end
+
+function M.for_buffer(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local path = find_config(M.start_path(bufnr))
+  local version = "missing"
+  if path then
+    version = fingerprint(vim.uv.fs_stat(path))
+  end
+
+  local cached = buffer_cache[bufnr]
+  if cached and cached.path == path and cached.version == version then
+    return cached.profile
+  end
+
+  local profile = path and vim.deepcopy(load_config(path)) or vim.deepcopy(DEFAULTS)
+  buffer_cache[bufnr] = { path = path, version = version, profile = profile }
+  return profile
+end
+
 function M.neotest_args(start_path)
   return M.get(start_path).neotest.args
 end
@@ -421,18 +457,24 @@ function M.apply_lsp_settings(bufnr)
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) or not vim.lsp then
     return
   end
-  local profile = M.get(M.start_path(bufnr))
+  local profile = M.for_buffer(bufnr)
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
     if client._lc_project_base_settings == nil then
       client._lc_project_base_settings = vim.deepcopy(client.settings or {})
     end
     local override = profile.lsp.settings[client.name] or {}
-    client.settings = vim.tbl_deep_extend(
+    if client.name == "basedpyright" and vim.tbl_isempty(override) then
+      override = profile.lsp.settings.pyright or {}
+    end
+    local settings = vim.tbl_deep_extend(
       "force",
       vim.deepcopy(client._lc_project_base_settings),
       vim.deepcopy(override)
     )
-    client:notify("workspace/didChangeConfiguration", { settings = client.settings })
+    if not vim.deep_equal(client.settings, settings) then
+      client.settings = settings
+      client:notify("workspace/didChangeConfiguration", { settings = settings })
+    end
   end
 end
 
@@ -442,7 +484,10 @@ function M.setup()
     group = group,
     callback = function(event)
       local bufnr = event.buf and event.buf > 0 and event.buf or vim.api.nvim_get_current_buf()
-      vim.schedule(function()
+      require("config.deferred").defer(bufnr, "project-profile", 25, function()
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+          return
+        end
         M.apply_editor_options(bufnr)
         M.apply_lsp_settings(bufnr)
       end)
@@ -452,6 +497,7 @@ function M.setup()
     group = group,
     pattern = CONFIG_NAME,
     callback = function()
+      M.invalidate()
       local bufnr = vim.api.nvim_get_current_buf()
       vim.schedule(function()
         M.apply_editor_options(bufnr)
