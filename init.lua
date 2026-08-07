@@ -1,4 +1,6 @@
 require("config.options")
 require("config.lazy")
+require("config.startup")
 require("config.keymaps")
 require("config.autosave")
+require("config.project_state").clear_obsolete_state()

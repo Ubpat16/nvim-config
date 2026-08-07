@@ -524,6 +524,98 @@ local function lc_git_ref_exists(root, ref, callback)
   end)
 end
 
+local function lc_find_default_branch(root, callback)
+  vim.system({
+    "git",
+    "-C",
+    root,
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  }, { text = true }, function(remote_head_result)
+    local remote_head = vim.trim(remote_head_result.stdout or "")
+    local remote_branch = remote_head:match("^origin/(.+)$")
+    if remote_head_result.code == 0 and remote_branch and remote_branch ~= "" then
+      callback(remote_branch)
+      return
+    end
+
+    if vim.fn.executable("gh") == 0 then
+      local function check_fallback(index)
+        local candidates = { "main", "master" }
+        local candidate = candidates[index]
+        if not candidate then
+          callback(nil)
+          return
+        end
+
+        vim.system({
+          "git",
+          "-C",
+          root,
+          "show-ref",
+          "--verify",
+          "--quiet",
+          "refs/heads/" .. candidate,
+        }, { text = true }, function(result)
+          if result.code == 0 then
+            callback(candidate)
+          else
+            check_fallback(index + 1)
+          end
+        end)
+      end
+
+      check_fallback(1)
+      return
+    end
+
+    vim.system({
+      "gh",
+      "repo",
+      "view",
+      "--json",
+      "defaultBranchRef",
+      "--jq",
+      ".defaultBranchRef.name",
+    }, { cwd = root, text = true }, function(gh_result)
+      local branch = vim.trim(gh_result.stdout or "")
+      if gh_result.code == 0 and branch ~= "" then
+        callback(branch)
+        return
+      end
+
+      local function check_fallback(index)
+        local candidates = { "main", "master" }
+        local candidate = candidates[index]
+        if not candidate then
+          callback(nil)
+          return
+        end
+
+        vim.system({
+          "git",
+          "-C",
+          root,
+          "show-ref",
+          "--verify",
+          "--quiet",
+          "refs/heads/" .. candidate,
+        }, { text = true }, function(result)
+          if result.code == 0 then
+            callback(candidate)
+          else
+            check_fallback(index + 1)
+          end
+        end)
+      end
+
+      check_fallback(1)
+    end)
+  end)
+end
+
 local function lc_prepare_pr_compare_ref(root, base_branch, callback)
   vim.system({ "git", "-C", root, "remote", "get-url", "origin" }, { text = true }, function(remote_result)
     if remote_result.code ~= 0 then
@@ -738,6 +830,11 @@ local function lc_generate_pr_with_base(root, current_branch, base_branch, opena
                 return
               end
 
+              if vim.fn.executable("gh") == 0 then
+                vim.notify("GitHub CLI (gh) is not installed or is not on PATH", vim.log.levels.ERROR)
+                return
+              end
+
               vim.b[bufnr].lc_pr_create_running = true
 
               -- Close preview window
@@ -830,30 +927,32 @@ local function lc_create_github_pr(root)
         return
       end
 
-      -- Get diff between current branch and main/master
-      vim.system({ "git", "-C", root, "log", "--oneline", "main.." .. current_branch }, { text = true }, function(log_result)
-        if log_result.code ~= 0 then
-          -- Try with master instead of main
-          vim.system({ "git", "-C", root, "log", "--oneline", "master.." .. current_branch }, { text = true }, function(log_result2)
-            if log_result2.code ~= 0 then
-              vim.schedule(function()
-                vim.notify("Could not find main or master branch to compare with", vim.log.levels.WARN)
-                vim.ui.input({
-                  prompt = "Base branch to compare with (e.g., main, master, develop): ",
-                  default = "main"
-                }, function(base_branch)
-                  if base_branch and base_branch ~= "" then
-                    lc_generate_pr_with_base(root, current_branch, base_branch, openai)
-                  end
-                end)
-              end)
-              return
-            end
-            lc_generate_pr_with_base(root, current_branch, "master", openai)
-          end)
-          return
-        end
-        lc_generate_pr_with_base(root, current_branch, "main", openai)
+      lc_find_default_branch(root, function(default_branch)
+        vim.schedule(function()
+          if not default_branch then
+            vim.notify("Could not determine the repository default branch", vim.log.levels.WARN)
+            return
+          end
+
+          if current_branch == default_branch then
+            vim.ui.input({
+              prompt = "Open PR into branch: ",
+            }, function(base_branch)
+              base_branch = vim.trim(base_branch or "")
+              if base_branch == "" then
+                return
+              end
+              if base_branch == current_branch then
+                vim.notify("A PR target branch must differ from the current branch", vim.log.levels.WARN)
+                return
+              end
+              lc_generate_pr_with_base(root, current_branch, base_branch, openai)
+            end)
+            return
+          end
+
+          lc_generate_pr_with_base(root, current_branch, default_branch, openai)
+        end)
       end)
     end)
   end)
@@ -1156,7 +1255,6 @@ local function lc_close_buffer()
   end
   local tabs = require("config.tabs")
   local listed = lc_listed_buffers()
-  local current_name = vim.api.nvim_buf_get_name(current)
   local current_buftype = vim.bo[current].buftype
 
   if vim.api.nvim_win_is_valid(current_win) and vim.wo[current_win].winfixbuf then
@@ -1174,20 +1272,8 @@ local function lc_close_buffer()
   end
 
   if #listed <= 1 then
-    local ok = pcall(vim.cmd, "confirm bdelete " .. current)
-    if not ok and vim.api.nvim_buf_is_valid(current) then
-      vim.b[current].lc_forget_project_file_on_close = false
-    end
+    pcall(vim.cmd, "confirm bdelete " .. current)
     return
-  end
-
-  local function forget_current_file()
-    if current_name == "" or vim.bo[current].buftype ~= "" then
-      return
-    end
-
-    vim.b[current].lc_forget_project_file_on_close = true
-    vim.cmd("silent! LastProjectFileForget " .. vim.fn.fnameescape(current_name))
   end
 
   local tab_buffers = tabs.current_tab_buffers()
@@ -1199,12 +1285,8 @@ local function lc_close_buffer()
     end
   end
 
-  forget_current_file()
   local ok = pcall(vim.cmd, "confirm bdelete " .. current)
   if not ok then
-    if vim.api.nvim_buf_is_valid(current) then
-      vim.b[current].lc_forget_project_file_on_close = false
-    end
     return
   end
 

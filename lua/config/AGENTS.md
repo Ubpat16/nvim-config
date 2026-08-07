@@ -60,13 +60,10 @@ buffer is deleted only from its final view.
 
 ### Tab
 
-A tab is a Neovim tabpage: a layout container for one or more windows. This repo
-persists tab identity, order, layout, and tracked normal file buffers across
-Neovim restarts in `tabs.lua`, while still tracking displayed buffers for
-workspace ownership and special-buffer cleanup. Persisted tab state now lives in
-project-scoped files under `stdpath("state")/projects/` and is gated by the
-startup project root. New tabs start blank and do not inherit the previous tab's
-tracked file buffers. Tabs are presented in the tabline, but each workspace only
+A tab is a Neovim tabpage: a layout container for one or more windows. Tabs,
+layouts, tracked normal file buffers, and cursor state are runtime-only and do
+not survive Neovim restarts. New launches begin with one blank tab in one fresh
+`main` workspace. Tabs are presented in the tabline, but each workspace only
 shows its own tabs there. The statusline shows the active workspace name with
 neighbor arrows.
 
@@ -74,11 +71,8 @@ Important details:
 
 - Tabs are assigned stable runtime IDs through the tab-local `lc_tab_id`
   variable.
-- `winlayout()` leaf nodes have the shape `{ "leaf", winid }`; tab persistence
-  must serialize the buffer displayed by that second value when it is a readable
-  normal file. Special, plugin, directory, and blank window leaves are not
-  persisted or restored. Restore keeps a tracked-buffer fallback for legacy
-  states whose leaf nodes omitted buffers.
+- `winlayout()` leaf nodes have the shape `{ "leaf", winid }`; layout data is
+  used only during the current session and is never serialized for restart.
 - Bufferline owns Neovim's visible `tabline` after its `VeryLazy` setup. Its
   built-in native tab indicators must remain disabled because they enumerate
   every Neovim tab globally. `config.tabline.bufferline_workspace_tabs()`
@@ -101,8 +95,8 @@ Important details:
 ### Workspace
 
 A workspace is a runtime-only grouping created by this config. It is not a
-native Neovim concept and it is not persisted across Neovim restarts. Tabs are
-the persisted unit; workspaces are recreated fresh on launch.
+native Neovim concept and it is not persisted across Neovim restarts. Tabs and
+workspaces are recreated fresh on launch.
 
 Workspaces group tabs and their tracked buffers inside the current Neovim
 session. New workspaces must start as a blank single-window tab with a fresh
@@ -114,11 +108,10 @@ the workspace being left. The workspace state lives in:
 - `active_workspace`
 - `tab_workspaces`
 
-Each workspace stores its name and last active tab. Creating, switching,
-renaming, listing, and closing workspaces is implemented in `config.tabs`.
-Workspace IDs, names, order, and tab membership must not be written to the
-project-state file. On restart, persisted native tabs are restored into one
-fresh `main` workspace.
+Each workspace stores its name and last active tab for the current session.
+Creating, switching, renaming, listing, and closing workspaces is implemented
+in `config.tabs`. Workspace IDs, names, order, and tab membership are never
+written to disk.
 Split windows and special plugin panes remain in the workspace where they were
 opened. Floating windows are snapshotted when leaving a tab and restored when
 returning when their buffers are still valid. Closing a workspace closes its tabs
@@ -169,8 +162,8 @@ changing file-opening behavior, preserve this routing unless the requested
 change explicitly alters the workspace model.
 
 File opening keeps duplicate routing, buffer ownership, and cursor restoration
-synchronous. Project-state persistence, LSP profile refreshes, linting,
-Treesitter startup, and Git decorations are deferred through
+synchronous. LSP profile refreshes, linting, Treesitter startup, and Git
+decorations are deferred through
 `config.deferred`; deferred callbacks must verify that their buffer or tab is
 still valid before applying work.
 
@@ -300,13 +293,13 @@ these mappings.
   file navigation, and duplicate file routing.
 - Track special buffers for workspace ownership, but do not add them to
   `tab_buffers`.
-- Do not make workspaces persistent without documenting the storage format,
-  restore order, and interaction with existing tab IDs.
+- Do not make tabs or workspaces persistent without documenting the storage
+  format, restore order, and interaction with existing tab IDs.
 - Resolve project configuration from the active file or test position, not only
   from Neovim's startup directory. Keep `nvim.config` data-only; never execute
   it as Lua or a shell script.
 - Resolve paths in `nvim.config` relative to that file. `project.root` controls
-  tool working directories but must not change project-state persistence keys.
+  tool working directories.
 - Read project settings at buffer or action time so one Neovim session can host
   multiple projects. Preserve valid fields when another field is invalid and
   warn once per changed invalid config version.

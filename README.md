@@ -22,7 +22,13 @@ This config is organized as Lua modules under `lua/config` and loaded from a min
 - Django command helpers
 - Copilot, Copilot Chat, and Codex integrations
 - Snacks notifier, input, quickfile, bigfile, dashboard, explorer, image, and picker modules
-- Autosave and last-project-file restore helpers
+- Autosave for modified file buffers
+
+When Neovim starts without file arguments, or with a single directory such as
+`nvim .`, the Snacks dashboard opens with file search, project search, recent
+files, configuration, and quit actions. The selected directory remains the
+working directory. Explicit file and multi-file launches open their requested
+targets normally.
 - REST client support for `.http` files
 
 ## Requirements
@@ -197,7 +203,7 @@ Project-specific settings can be stored in a JSON file named `nvim.config`. Neov
 }
 ```
 
-All configured paths are resolved relative to the selected `nvim.config`. `project.root` changes tool and command working directories, but project-scoped tab and recent-file persistence continues to use the detected Git/project root. Env-file paths may point to files containing secrets; literal environment values and arbitrary shell commands are not accepted by the schema.
+All configured paths are resolved relative to the selected `nvim.config`. `project.root` changes tool and command working directories. Env-file paths may point to files containing secrets; literal environment values and arbitrary shell commands are not accepted by the schema.
 
 `neotest.args` remains backward compatible and applies to neotest plus the `<leader>pt`, `<leader>pf`, and `<leader>pa` direct pytest helpers. `pytest.direct_args` applies only to those direct helpers. Run-specific arguments such as `--pdb` or prompted pytest arguments remain appended by the invoking command.
 
@@ -282,7 +288,7 @@ Use:
 <leader>gP
 ```
 
-This generates a GitHub PR title and description from commits and diff against `main` or `master`, then opens a preview buffer. Save the preview with `:wq` to create the PR through `gh pr create`.
+This generates a GitHub PR title and description from commits and diff against the repository's default branch, then opens a preview buffer. When the current branch is the default branch, it prompts for the branch to open the PR into. Save the preview with `:wq` to create the PR through `gh pr create`.
 
 ### Git Error Handling
 
@@ -406,7 +412,7 @@ Copilot insert-mode mappings:
 | `<C-o>`             | Jump to older jumplist position     |
 | `<C-i>`             | Jump to newer jumplist position     |
 
-Tabs are persisted across Neovim restarts. A new tab starts blank and does not inherit the previous tab's tracked file buffers. Tab-local buffer navigation stays scoped to normal file buffers in the current tab and follows stable first-added order, so visiting a buffer does not renumber `[b` / `]b` navigation. Cursor positions are session-only and remembered per window and buffer, with a tab-local fallback for a window that has not shown the buffer before; two splits of the same file therefore retain independent cursor positions. When the same buffer is visible in multiple splits, `<leader>bd` closes only the current split; its final view deletes the buffer. Those cursor positions are cleared when the buffer is deleted with `<leader>bd`, `<leader>bc`, or `<leader>bzc`. Tabs remember layouts containing readable normal files when Neovim exits and starts again; plugin, special, directory, and blank windows are not restored. Tab next/previous navigation stays scoped to the active workspace. Workspaces remain runtime-only: after restart, all restored native tabs belong to one fresh `main` workspace.
+Tabs, layouts, tracked buffers, cursor positions, and workspaces are session-only. Every Neovim launch starts with one blank tab in a fresh `main` workspace. Tab-local buffer navigation stays scoped to normal file buffers in the current tab and follows stable first-added order, so visiting a buffer does not renumber `[b` / `]b` navigation. When the same buffer is visible in multiple splits, `<leader>bd` closes only the current split; its final view deletes the buffer. Tab next/previous navigation stays scoped to the active workspace.
 
 Bufferline owns the visible tabline. Its buffer list is scoped to the current tab, and its right side shows only tabs from the active workspace, numbered from 1 within that workspace. Bufferline's global native-tab indicators are disabled so tabs from other workspaces remain hidden. The statusline shows the active workspace name with clickable `<<` and `>>` arrows for moving between available workspaces.
 
@@ -652,10 +658,6 @@ keymaps and user commands are preserved unless `allow_override = true`.
 | `:FormatWrite`            | Format and save current buffer            |
 | `:FilePreview [path]`     | Pick or preview file in a floating window |
 | `:FilePreviewClose`       | Close file preview window                 |
-| `:LastProjectFile`        | Show remembered file for current project  |
-| `:LastProjectFileOpen`    | Open remembered file for current project  |
-| `:LastProjectFileForget`  | Forget a remembered project file          |
-| `:LastProjectFiles`       | Show remembered files                     |
 | `:SmartQuit`              | Close buffer or quit when appropriate     |
 | `:WorkspaceNew [name]`    | Create a runtime workspace                |
 | `:WorkspaceNext`          | Switch to next workspace                  |
